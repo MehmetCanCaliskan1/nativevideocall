@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="black">#FF000000</color>
+
+    <!-- Custom colors for WebRTC Demo -->
+    <color name="primary">#137FEC</color>
+    <color name="background_dark">#E5E8E9</color>
+    <color name="background_gradient_start">#2196F3</color>
+    <color name="background_gradient_middle">#0AA6E9</color>
+    <color name="background_gradient_end">#0E96D9</color>
+    <color name="white_85">#D9FFFFFF</color>
+
+        <color name="teal_700">#00BFA5</color> <color name="teal_200">#64FFDA</color>
+
+        <color name="glass_panel">#2196F3</color>
+
+        <color name="white">#FFFFFF</color>
+        <color name="white_60">#99FFFFFF</color> <color name="white_30">#4DFFFFFF</color> <color name="white_20">#33FFFFFF</color> <color name="white_10">#1AE41515</color> <color name="dim_overlay">#CC000000</color>
+
+</resources>
