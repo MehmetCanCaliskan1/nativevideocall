@@ -28,7 +28,7 @@ import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
 import androidx.core.graphics.toColorInt
 import java.lang.ref.WeakReference
-
+import androidx.appcompat.app.AlertDialog
 class RoomActivity : AppCompatActivity(), RtcListener {
 
     companion object {
@@ -57,8 +57,6 @@ class RoomActivity : AppCompatActivity(), RtcListener {
 
     private var videoEnabled = true
     private var audioEnabled = true
-    private var isSpeakerOn = false
-    private var dataChannelReady = false
     private var isAppInForeground = true
     private var needsCameraRestart = false
 
@@ -176,17 +174,6 @@ class RoomActivity : AppCompatActivity(), RtcListener {
         initialParams.topMargin = (resources.displayMetrics.density * 80).toInt()
         initialParams.gravity = android.view.Gravity.TOP or android.view.Gravity.END
         localViewContainer.layoutParams = initialParams
-
-        // there's a bug with outlineProvider and SurfaceViewRenderer
-        // corner radius works fine, but if we drag it onto the remote view, which part intercepts will start to lose corner radius
-//        val localView = findViewById<SurfaceViewRenderer>(R.id.local_view)
-//        localView.outlineProvider = object : ViewOutlineProvider() {
-//            override fun getOutline(view: View, outline: Outline) {
-//                outline.setRoundRect(0, 0, view.width, view.height, 16 * resources.displayMetrics.density)
-//            }
-//        }
-//
-//        localView.clipToOutline = true
 
         setupDraggableView(localViewContainer)
 
@@ -376,50 +363,6 @@ class RoomActivity : AppCompatActivity(), RtcListener {
         }
     }
 
-    private fun getRealPathFromURI(uri: android.net.Uri): String? {
-        var result: String? = null
-
-        // For content:// URIs, try to get the actual file path
-        if (uri.scheme == "content") {
-            val cursor = contentResolver.query(uri, null, null, null, null)
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    val columnIndex = it.getColumnIndex(android.provider.MediaStore.Video.Media.DATA)
-                    if (columnIndex >= 0) {
-                        result = it.getString(columnIndex)
-                    }
-                }
-            }
-
-            // If we couldn't get path from MediaStore, try to copy to cache
-            if (result == null) {
-                result = copyUriToCache(uri)
-            }
-        } else if (uri.scheme == "file") {
-            result = uri.path
-        }
-
-        return result
-    }
-
-    private fun copyUriToCache(uri: android.net.Uri): String? {
-        return try {
-            val inputStream = contentResolver.openInputStream(uri) ?: return null
-            val file = java.io.File(cacheDir, "shared_video_${System.currentTimeMillis()}.mp4")
-            val outputStream = java.io.FileOutputStream(file)
-
-            inputStream.use { input ->
-                outputStream.use { output ->
-                    input.copyTo(output)
-                }
-            }
-
-            file.absolutePath
-        } catch (e: Exception) {
-            Log.e(TAG, "Error copying URI to cache", e)
-            null
-        }
-    }
 
     override fun onPause() {
         super.onPause()
@@ -510,6 +453,29 @@ class RoomActivity : AppCompatActivity(), RtcListener {
 
     override fun onPeersConnectionStatusChange(success: Boolean) {
         TODO("Not yet implemented")
+    }
+
+
+    override fun onJoinRequest(participantId: String, participantName: String?) { // Not: Interface'ini güncellemen gerekebilir, aşağıda açıkladım
+        runOnUiThread {
+            val nameToShow = participantName ?: "Bir misafir"
+
+            AlertDialog.Builder(this)
+                .setTitle("Katılım İsteği")
+                .setMessage("$nameToShow odaya katılmak istiyor.")
+                .setCancelable(false) // Dışarı basınca kapanmasın, karar verilsin
+                .setPositiveButton("Kabul Et") { dialog, _ ->
+                    // Kabul edildiğini sunucuya bildir
+                    peerConnectionClient?.sendJoinDecision(participantId, true)
+                    dialog.dismiss()
+                }
+                .setNegativeButton("Reddet") { dialog, _ ->
+                    // Reddedildiğini sunucuya bildir
+                    peerConnectionClient?.sendJoinDecision(participantId, false)
+                    dialog.dismiss()
+                }
+                .show()
+        }
     }
 
     override fun onRequestPermissionsResult(

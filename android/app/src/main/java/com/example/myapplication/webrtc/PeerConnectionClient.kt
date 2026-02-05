@@ -1,13 +1,13 @@
 package com.example.myapplication.webrtc
 
 import android.content.Context
-import android.hardware.camera2.CameraManager
 import android.util.Log
 import io.socket.client.IO
 import io.socket.client.Socket
 import org.webrtc.*
 import java.net.URISyntaxException
-
+import org.json.JSONObject
+import org.json.JSONException
 class PeerConnectionClient(
     private val context: Context,
     private val roomId: String,
@@ -15,7 +15,21 @@ class PeerConnectionClient(
     host: String,
     private val rootEglBase: EglBase
 ) {
+    fun sendJoinDecision(requesterId: String, isApproved: Boolean) {
+        val decision = if (isApproved) "approve" else "reject"
 
+        val payload = JSONObject()
+        try {
+            payload.put("decision", decision)
+            payload.put("requesterId", requesterId)
+            payload.put("requesterName", "Host")
+        } catch (e: JSONException) {
+            e.printStackTrace()
+        }
+
+        // Server.js'deki 'handle-join-request' olayını tetikler
+        socket?.emit("handle-join-request", payload)
+    }
     companion object {
         private const val TAG = "PeerConnectionClient"
     }
@@ -58,6 +72,7 @@ class PeerConnectionClient(
 
         pcConstraints.mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"))
         pcConstraints.mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"))
+
     }
 
     private fun initSignaling(host: String) {
@@ -75,6 +90,15 @@ class PeerConnectionClient(
         )
 
         signalingHandler.setupListeners()
+        socket.on("join-request") { args ->
+            if (args.isNotEmpty()) {
+                val data = args[0] as JSONObject
+                val socketId = data.optString("socketId")
+                val username = data.optString("username")
+
+                listener.onJoinRequest(socketId, username)
+            }
+        }
         socket.connect()
     }
 
@@ -184,3 +208,5 @@ private fun VideoCapturer.stopCaptureSafely() {
         Log.e("PeerConnectionClient", "stopCapture error", e)
     }
 }
+
+

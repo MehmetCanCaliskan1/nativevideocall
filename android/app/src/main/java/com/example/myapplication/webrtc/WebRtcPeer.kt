@@ -80,7 +80,6 @@ class WebRtcPeer(
         peerConnection.dispose()
     }
 
-    /* ================= SDP Observer ================= */
 
     override fun onCreateSuccess(sdp: SessionDescription) {
         peerConnection.setLocalDescription(this, sdp)
@@ -105,7 +104,6 @@ class WebRtcPeer(
         Log.e(TAG, "SDP set failure: $error")
     }
 
-    /* ================= PeerConnection.Observer ================= */
 
     override fun onSignalingChange(state: PeerConnection.SignalingState) {}
 

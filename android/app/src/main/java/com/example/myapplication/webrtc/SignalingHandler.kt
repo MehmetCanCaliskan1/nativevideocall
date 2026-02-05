@@ -29,7 +29,7 @@ class SignalingHandler(
         socket.on(Socket.EVENT_DISCONNECT, onDisconnect)
     }
 
-    /* -------------------- SOCKET EVENTS -------------------- */
+    /*  SOCKET EVENTS  */
 
     private val onConnect = Emitter.Listener {
         Log.d(TAG, "Socket connected")

@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">VideoCALL</string>
-    <string name="serverAddress">http://10.246.189.63:5006</string>
+    <string name="serverAddress">http://10.246.20.183:5006</string>
     <string name="dataChannelName">MyApp Channel</string>
 </resources>

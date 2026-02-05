@@ -15,4 +15,6 @@ interface RtcListener {
     fun onRemoveRemoteStream()
 
     fun onPeersConnectionStatusChange(success: Boolean)
-}
+
+
+    fun onJoinRequest(participantId: String, participantName: String?) }

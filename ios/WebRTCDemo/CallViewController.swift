@@ -3,7 +3,7 @@ import SocketIO
 import WebRTC
 import AVFoundation
 
-let SERVER_URL = "http://10.246.189.63:5006"
+let SERVER_URL = "http://10.246.20.183:5006"
 
 class CallViewController: UIViewController, WebRTCClientDelegate {
     var targetSocketId: String?
@@ -22,7 +22,7 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
     private func setupWaitingOverlay() {
         waitingOverlay.backgroundColor = UIColor(red: 0.11, green: 0.13, blue: 0.18, alpha: 1.0)
         waitingOverlay.frame = view.bounds
-        waitingOverlay.isHidden = true // Başlangıçta gizli
+        waitingOverlay.isHidden = true
         
         waitingSpinner.color = .white
         waitingSpinner.startAnimating()
@@ -79,6 +79,7 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
     // Local Video
     private let localVideoContainer = UIView()
     private let localMuteIndicator = UIImageView()
+    private let hostLabel=UILabel()
     
     // Bottom Controls
     private let bottomControlsContainer = UIView()
@@ -123,6 +124,8 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
         #endif
         
         socket = manager.defaultSocket
+        
+        setupWaitingOverlay()
         
         setupSocketHandlers()
         setupUI()
@@ -213,6 +216,17 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
             // Bekleme ekranını kapat
             DispatchQueue.main.async {
                 self.waitingOverlay.isHidden = true
+                let isHost = firstArg["isHost"] as? Bool ?? false
+                                
+                                self.hostLabel.isHidden = false
+                                
+                                if isHost {
+                                    self.hostLabel.text = "HOST"
+                                    self.hostLabel.backgroundColor = .systemOrange
+                                } else {
+                                    self.hostLabel.text = "GUEST"
+                                    self.hostLabel.backgroundColor = .systemBlue
+                                }
             }
 
             if let users = firstArg["users"] as? [[String: Any]] {
@@ -431,11 +445,32 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
         localMuteIndicator.translatesAutoresizingMaskIntoConstraints = false
         localVideoContainer.addSubview(localMuteIndicator)
         
+                hostLabel.text = ""
+                hostLabel.font = .systemFont(ofSize: 10, weight: .bold)
+                hostLabel.textColor = .white
+                hostLabel.textAlignment = .center
+                hostLabel.layer.cornerRadius = 4
+                hostLabel.clipsToBounds = true
+                hostLabel.isHidden = true
+                hostLabel.translatesAutoresizingMaskIntoConstraints = false
+                localVideoContainer.addSubview(hostLabel)
+        
+        
+        
         NSLayoutConstraint.activate([
             localMuteIndicator.widthAnchor.constraint(equalToConstant: 20),
             localMuteIndicator.heightAnchor.constraint(equalToConstant: 20),
             localMuteIndicator.trailingAnchor.constraint(equalTo: localVideoContainer.trailingAnchor, constant: -8),
-            localMuteIndicator.bottomAnchor.constraint(equalTo: localVideoContainer.bottomAnchor, constant: -8)
+            localMuteIndicator.bottomAnchor.constraint(equalTo: localVideoContainer.bottomAnchor, constant: -8),
+            
+            
+            
+            hostLabel.leadingAnchor.constraint(equalTo: localVideoContainer.leadingAnchor, constant: 6),
+                        hostLabel.topAnchor.constraint(equalTo: localVideoContainer.topAnchor, constant: 6),
+                        
+                        hostLabel.widthAnchor.constraint(equalToConstant: 45),
+                        
+                        hostLabel.heightAnchor.constraint(equalToConstant: 18)
         ])
         
         // Setup dragging
