@@ -1,5 +1,10 @@
+import java.util.Properties
 import org.gradle.kotlin.dsl.support.kotlinCompilerOptions
-
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(localPropertiesFile.inputStream())
+}
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -17,8 +22,14 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
 
+        buildConfigField("String", "TURN_URI", localProperties.getProperty("TURN_URI") ?: "\"\"")
+        buildConfigField("String", "TURN_USERNAME", localProperties.getProperty("TURN_USERNAME") ?: "\"\"")
+        buildConfigField("String", "TURN_PASSWORD", localProperties.getProperty("TURN_PASSWORD") ?: "\"\"")
+    }
+    buildFeatures {
+        buildConfig = true
+    }
     buildTypes {
         release {
             isMinifyEnabled = false

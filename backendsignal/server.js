@@ -193,12 +193,14 @@ function handleDisconnect(socket) {
       const leaver = rooms[roomId][userIndex];
       console.log(`${leaver.username} (${socket.id}) ayrıldı.`);
 
+      // Odada kalan diğer kişiye haber veriyoruz.
+      socket.to(roomId).emit("user-disconnected", { 
+        socketId: socket.id,
+        username: leaver.username 
+      });
       // Kullanıcıyı listeden sil
       rooms[roomId].splice(userIndex, 1);
 
-   
-      //  Sadece listeden siler, kalanlar devam eder.
-      
       if (rooms[roomId].length === 0) {
         roomIdToDelete = roomId;
       } else {

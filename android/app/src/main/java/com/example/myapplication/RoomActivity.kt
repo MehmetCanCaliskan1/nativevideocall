@@ -405,6 +405,19 @@ class RoomActivity : AppCompatActivity(), RtcListener {
     override fun onStatusChanged(newStatus: String) {
         runOnUiThread {
             Toast.makeText(this@RoomActivity, newStatus, Toast.LENGTH_SHORT).show()
+
+            val roomIdText = findViewById<TextView>(R.id.room_id)
+
+            if (newStatus == "CONNECTED") {
+                roomIdText.text = "Room: $roomId (Bağlandı)"
+                roomIdText.setTextColor(android.graphics.Color.GREEN)
+            } else if (newStatus == "CONNECTING") {
+                roomIdText.text = "Room: $roomId (Bağlanıyor...)"
+                roomIdText.setTextColor(android.graphics.Color.YELLOW)
+            } else {
+                roomIdText.text = "Room: $roomId ($newStatus)"
+                roomIdText.setTextColor(android.graphics.Color.RED)
+            }
         }
     }
 
@@ -452,32 +465,39 @@ class RoomActivity : AppCompatActivity(), RtcListener {
     }
 
     override fun onPeersConnectionStatusChange(success: Boolean) {
-        TODO("Not yet implemented")
+        Log.d(TAG, "onPeersConnectionStatusChange: Success=$success")
+
     }
 
 
-    override fun onJoinRequest(participantId: String, participantName: String?) { // Not: Interface'ini güncellemen gerekebilir, aşağıda açıkladım
+    override fun onJoinRequest(participantId: String, participantName: String?) {
         runOnUiThread {
-            val nameToShow = participantName ?: "Bir misafir"
+            val nameToShow = participantName ?: "Gizli Misafir"
+
+            if (isFinishing) return@runOnUiThread
 
             AlertDialog.Builder(this)
-                .setTitle("Katılım İsteği")
-                .setMessage("$nameToShow odaya katılmak istiyor.")
-                .setCancelable(false) // Dışarı basınca kapanmasın, karar verilsin
+                .setTitle("Odaya Giriş İsteği")
+                .setMessage("$nameToShow katılmak istiyor. Onaylıyor musunuz?")
+                .setCancelable(false)
                 .setPositiveButton("Kabul Et") { dialog, _ ->
-                    // Kabul edildiğini sunucuya bildir
-                    peerConnectionClient?.sendJoinDecision(participantId, true)
+                    // 1. Sunucuya kabul kararını bildir
+                    peerConnectionClient?.sendJoinDecision(participantId, nameToShow, true)                    // 2. ARAYÜZÜ GÜNCELLE (Burası eklendi)
+                    // Bağlantı kurulana kadar "Connecting" (Sarı) durumuna geçiriyoruz.
+                    onStatusChanged("CONNECTING")
+
+                    Toast.makeText(this, "$nameToShow kabul edildi, bağlanılıyor...", Toast.LENGTH_SHORT).show()
                     dialog.dismiss()
                 }
                 .setNegativeButton("Reddet") { dialog, _ ->
-                    // Reddedildiğini sunucuya bildir
-                    peerConnectionClient?.sendJoinDecision(participantId, false)
+                    peerConnectionClient?.sendJoinDecision(participantId, requesterName =participantId,approved = false)
+                    Toast.makeText(this, "$nameToShow reddedildi", Toast.LENGTH_SHORT).show()
                     dialog.dismiss()
                 }
+                .setIcon(android.R.drawable.ic_dialog_info)
                 .show()
         }
     }
-
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<String>,
@@ -485,5 +505,14 @@ class RoomActivity : AppCompatActivity(), RtcListener {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         permissionChecker.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    }
+
+
+    override fun onJoinRejected(reason: String) {
+        runOnUiThread {
+            Toast.makeText(this, "Odaya giriş talebiniz reddedildi.", Toast.LENGTH_LONG).show()
+            peerConnectionClient?.onDestroy()
+            finish()
+        }
     }
 }

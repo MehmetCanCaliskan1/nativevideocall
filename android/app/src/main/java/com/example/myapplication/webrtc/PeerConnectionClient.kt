@@ -8,28 +8,32 @@ import org.webrtc.*
 import java.net.URISyntaxException
 import org.json.JSONObject
 import org.json.JSONException
+
 class PeerConnectionClient(
     private val context: Context,
     private val roomId: String,
-    private val listener: RtcListener,
+    private val rtcListener: RtcListener,
     host: String,
     private val rootEglBase: EglBase
 ) {
-    fun sendJoinDecision(requesterId: String, isApproved: Boolean) {
-        val decision = if (isApproved) "approve" else "reject"
+    // SignalingHandler.kt
 
-        val payload = JSONObject()
-        try {
-            payload.put("decision", decision)
-            payload.put("requesterId", requesterId)
-            payload.put("requesterName", "Host")
-        } catch (e: JSONException) {
-            e.printStackTrace()
-        }
+    fun sendJoinDecision(requesterId: String, requesterName: String, approved: Boolean) {
+        val decisionData = JSONObject()
 
-        // Server.js'deki 'handle-join-request' olayını tetikler
-        socket?.emit("handle-join-request", payload)
+        // 1. Kararı ekle (approve / reject)
+        decisionData.put("decision", if (approved) "approve" else "reject")
+
+        // 2. ID'yi ekle
+        decisionData.put("requesterId", requesterId)
+
+        // 3. İSMİ EKLE (Burası eksikti, bu yüzden undefined geliyordu)
+        decisionData.put("requesterName", requesterName)
+
+        // Sunucuya gönder
+        socket.emit("handle-join-request", decisionData)
     }
+
     companion object {
         private const val TAG = "PeerConnectionClient"
     }
@@ -58,7 +62,8 @@ class PeerConnectionClient(
 
     private fun initWebRtc() {
         PeerConnectionFactory.initialize(
-            PeerConnectionFactory.InitializationOptions.builder(context).createInitializationOptions()
+            PeerConnectionFactory.InitializationOptions.builder(context)
+                .createInitializationOptions()
         )
 
         factory = PeerConnectionFactory.builder()
@@ -77,8 +82,10 @@ class PeerConnectionClient(
 
     private fun initSignaling(host: String) {
         try {
+            // Socket URL'sinin doğru formatta (http://ip:port) olduğundan emin ol
             socket = IO.socket(host)
         } catch (e: URISyntaxException) {
+            Log.e(TAG, "Socket URL Error: $host", e)
             throw RuntimeException(e)
         }
 
@@ -90,15 +97,52 @@ class PeerConnectionClient(
         )
 
         signalingHandler.setupListeners()
-        socket.on("join-request") { args ->
-            if (args.isNotEmpty()) {
-                val data = args[0] as JSONObject
-                val socketId = data.optString("socketId")
-                val username = data.optString("username")
 
-                listener.onJoinRequest(socketId, username)
+        // --- DÜZELTME BAŞLANGICI ---
+
+        // 1. Socket bağlantısını kontrol et
+        socket.on(Socket.EVENT_CONNECT) {
+            Log.d(TAG, "Socket: CONNECTED to server")
+        }
+
+        socket.on(Socket.EVENT_CONNECT_ERROR) { args ->
+            Log.e(TAG, "Socket: CONNECTION ERROR: ${args[0]}")
+        }
+
+        // 2. join-request dinleyicisi
+        socket.on("join-request") { args ->
+            Log.d(TAG, "EVENT: join-request received. Data: ${args.getOrNull(0)}")
+
+            if (args.isNotEmpty()) {
+                try {
+                    val data = args[0] as JSONObject
+
+                    // socketId gelmezse 'id' yi dene
+                    val requesterId = data.optString("socketId", data.optString("id"))
+
+                    val requesterName = data.optString("username", data.optString("name", "Misafir"))
+
+                    Log.d(TAG, "Parsing Success -> ID: $requesterId, Name: $requesterName")
+
+                    rtcListener.onJoinRequest(requesterId, requesterName)
+
+                } catch (e: Exception) {
+                    Log.e(TAG, "JSON Parsing Error in join-request", e)
+                }
+            } else {
+                Log.e(TAG, "join-request received but args is empty!")
             }
         }
+// PeerConnectionClient.kt içindeki initSignaling içine ekleyin:
+
+        socket.on("join-rejected") {
+            Log.d(TAG, "Giriş isteği host tarafından reddedildi.")
+            // Activity'e haber ver
+            rtcListener.onJoinRejected("Host isteğinizi reddetti.")
+        }
+
+
+       
         socket.connect()
     }
 
@@ -143,7 +187,7 @@ class PeerConnectionClient(
             factory = factory!!,
             localStream = localStream!!,
             pcConstraints = pcConstraints,
-            listener = listener,
+            listener = rtcListener,
             signalingHandler = signalingHandler
         )
         return peer!!
@@ -175,7 +219,7 @@ class PeerConnectionClient(
         localStream!!.addTrack(videoTrack)
         localStream!!.addTrack(audioTrack)
 
-        listener.onAddLocalStream(localStream!!)
+        rtcListener.onAddLocalStream(localStream!!)
     }
 
     private fun createCameraCapturer(): VideoCapturer {

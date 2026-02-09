@@ -1,12 +1,9 @@
 package com.example.myapplication.webrtc
 
 import android.util.Log
+import com.example.myapplication.BuildConfig
 import org.webrtc.*
 
-/**
- * Manages a single WebRTC peer connection including SDP negotiation
- * and ICE candidates.
- */
 class WebRtcPeer(
     factory: PeerConnectionFactory,
     localStream: MediaStream,
@@ -16,26 +13,34 @@ class WebRtcPeer(
 ) : SdpObserver, PeerConnection.Observer {
 
     val peerConnection: PeerConnection
+    private val pendingIceCandidates = mutableListOf<IceCandidate>()
 
     companion object {
         private const val TAG = "WebRtcPeer"
     }
 
     init {
-        Log.d(TAG, "Creating new peer connection")
-
         val rtcConfig = PeerConnection.RTCConfiguration(mutableListOf()).apply {
             iceServers.add(
                 PeerConnection.IceServer
                     .builder("stun:stun.l.google.com:19302")
                     .createIceServer()
             )
+
+           iceServers.add(
+                PeerConnection.IceServer.builder(BuildConfig.TURN_URI)
+                    .setUsername(BuildConfig.TURN_USERNAME)
+                    .setPassword(BuildConfig.TURN_PASSWORD)
+                    .createIceServer()
+            )
+
+            sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+            iceCandidatePoolSize = 2
         }
 
         peerConnection = factory.createPeerConnection(rtcConfig, this)
             ?: throw IllegalStateException("PeerConnection creation failed")
 
-        // Add local tracks
         localStream.audioTracks.firstOrNull()
             ?.let { peerConnection.addTrack(it, listOf("ARDAMS")) }
 
@@ -45,7 +50,9 @@ class WebRtcPeer(
         listener.onStatusChanged("CONNECTING")
     }
 
-    /* ================= Public API ================= */
+
+
+
 
     fun createOffer() {
         peerConnection.createOffer(this, pcConstraints)
@@ -62,6 +69,8 @@ class WebRtcPeer(
     fun addIceCandidate(candidate: IceCandidate) {
         if (peerConnection.remoteDescription != null) {
             peerConnection.addIceCandidate(candidate)
+        } else {
+            pendingIceCandidates.add(candidate)
         }
     }
 
@@ -76,10 +85,14 @@ class WebRtcPeer(
     fun getSenders(): List<RtpSender> = peerConnection.senders
 
     fun dispose() {
-        Log.d(TAG, "Disposing peer connection")
+        // Önce close, sonra dispose sırası önemlidir
+        try {
+            peerConnection.close()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to close peer connection", e)
+        }
         peerConnection.dispose()
     }
-
 
     override fun onCreateSuccess(sdp: SessionDescription) {
         peerConnection.setLocalDescription(this, sdp)
@@ -95,7 +108,13 @@ class WebRtcPeer(
         }
     }
 
-    override fun onSetSuccess() {}
+    override fun onSetSuccess() {
+        if (peerConnection.remoteDescription != null && pendingIceCandidates.isNotEmpty()) {
+            pendingIceCandidates.forEach { peerConnection.addIceCandidate(it) }
+            pendingIceCandidates.clear()
+        }
+    }
+
     override fun onCreateFailure(error: String) {
         Log.e(TAG, "SDP create failure: $error")
     }
@@ -104,22 +123,30 @@ class WebRtcPeer(
         Log.e(TAG, "SDP set failure: $error")
     }
 
-
     override fun onSignalingChange(state: PeerConnection.SignalingState) {}
 
     override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
+        Log.d(TAG, "onIceConnectionChange: $state") // Logcat'ten bu çıktıyı takip edin
+
         when (state) {
-            PeerConnection.IceConnectionState.CONNECTED -> {
-                Log.d(TAG, "Peers connected")
+            // HEM CONNECTED HEM DE COMPLETED DURUMLARINI KONTROL ET
+            PeerConnection.IceConnectionState.CONNECTED,
+            PeerConnection.IceConnectionState.COMPLETED -> {
                 listener.onStatusChanged("CONNECTED")
                 listener.onPeersConnectionStatusChange(true)
             }
 
             PeerConnection.IceConnectionState.DISCONNECTED -> {
                 listener.onStatusChanged("DISCONNECTED")
+                listener.onPeersConnectionStatusChange(false)
+            }
+
+            PeerConnection.IceConnectionState.FAILED,
+            PeerConnection.IceConnectionState.CLOSED -> {
+                listener.onStatusChanged("FAILED")
                 listener.onRemoveRemoteStream()
                 listener.onPeersConnectionStatusChange(false)
-                dispose()
+                dispose() // Bağlantı koptuysa temizle
             }
 
             else -> Unit
@@ -135,19 +162,15 @@ class WebRtcPeer(
     }
 
     override fun onAddStream(stream: MediaStream) {
-        Log.d(TAG, "onAddStream ${stream.id}")
         listener.onAddRemoteStream(stream)
     }
 
     override fun onRemoveStream(stream: MediaStream) {
-        Log.d(TAG, "onRemoveStream ${stream.id}")
         listener.onRemoveRemoteStream()
     }
 
     override fun onIceConnectionReceivingChange(receiving: Boolean) {}
     override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {}
     override fun onRenegotiationNeeded() {}
-
-    override fun onDataChannel(dataChannel: DataChannel) {
-    }
+    override fun onDataChannel(dataChannel: DataChannel) {}
 }

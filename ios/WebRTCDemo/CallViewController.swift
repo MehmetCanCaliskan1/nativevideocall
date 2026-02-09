@@ -3,10 +3,11 @@ import SocketIO
 import WebRTC
 import AVFoundation
 
-let SERVER_URL = "http://10.246.20.183:5006"
+let SERVER_URL = "http://10.246.128.174:5006"
 
 class CallViewController: UIViewController, WebRTCClientDelegate {
     var targetSocketId: String?
+    var isCurrentUserHost: Bool = false
     func didReceiveMessage(message: String) {
         
     }
@@ -57,7 +58,6 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
     // UI State
     private var videoEnabled = true
     private var audioEnabled = true
-    private var isSpeakerOn = false
     private var peersConnected = false
     
     // UI Elements
@@ -83,15 +83,11 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
     
     // Bottom Controls
     private let bottomControlsContainer = UIView()
-    private let secondaryControlsStack = UIStackView()
     private let primaryControlsContainer = UIView()
     private let glassPanelView = UIView()
     private let primaryControlsStack = UIStackView()
     
-    // Secondary Control Containers
-    private let speakerContainer = UIView()
-    private let speakerButton = UIButton(type: .system)
-    private let speakerLabel = UILabel()
+  
     
     // Primary Control Containers
     private let muteContainer = UIView()
@@ -217,7 +213,7 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
             DispatchQueue.main.async {
                 self.waitingOverlay.isHidden = true
                 let isHost = firstArg["isHost"] as? Bool ?? false
-                                
+                self.isCurrentUserHost = isHost
                                 self.hostLabel.isHidden = false
                                 
                                 if isHost {
@@ -288,7 +284,56 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
                 )
             )
         }
-        
+        socket.on("user-disconnected") { [weak self] data, _ in
+            guard let self = self else { return }
+            
+            // Ayrılan kişinin ismini al
+            var leaverName = "Misafir"
+            if let args = data as? [[String: Any]],
+               let firstArg = args.first,
+               let username = firstArg["username"] as? String {
+                leaverName = username
+            }
+            
+            print("\(leaverName) odadan ayrıldı.")
+            
+            DispatchQueue.main.async {
+                
+                // Eğer ben HOST DEĞİLSEM
+                // Odayı kapat ve çıkış yap.
+                if !self.isCurrentUserHost {
+                    let alert = UIAlertController(
+                        title: "Görüşme Sonlandı",
+                        message: "Host odadan ayrıldığı için görüşme sonlandırıldı.",
+                        preferredStyle: .alert
+                    )
+                    
+                    alert.addAction(UIAlertAction(title: "Tamam", style: .destructive) { _ in
+                        // WebRTC ve Socket bağlantılarını temizle
+                        self.socket.disconnect()
+                        self.webRTCClient?.disconnect()
+                        // Ekranı kapat
+                        self.navigationController?.popViewController(animated: true)
+                    })
+                    
+                    self.present(alert, animated: true)
+                    return
+                }
+                
+                
+                // Eğer ben Host isem ve Guest çıktıysa
+                if self.isCurrentUserHost {
+                    self.showToast(message: "\(leaverName) odadan ayrıldı.", duration: 4.0)
+                }
+                
+                // Bağlantı UI durumunu güncelle
+                self.statusLabel.text = "Disconnected"
+                self.connectionDot.isHidden = true
+                self.peersConnected = false
+                self.connectionDot.layer.removeAllAnimations()
+              
+            }
+        }
         socket.on("waiting-approval") { [weak self] _, _ in
             DispatchQueue.main.async {
                 self?.waitingOverlay.isHidden = false
@@ -479,80 +524,63 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
     }
     
     private func setupBottomControls() {
-        bottomControlsContainer.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(bottomControlsContainer)
-        
-        // --- SECONDARY STACK (Speaker Only) ---
-        secondaryControlsStack.axis = .horizontal
-        secondaryControlsStack.alignment = .center
-        secondaryControlsStack.translatesAutoresizingMaskIntoConstraints = false
-        bottomControlsContainer.addSubview(secondaryControlsStack)
-        
-        // Speaker Butonu
-        setupSecondaryControl(
-            container: speakerContainer,
-            button: speakerButton,
-            label: speakerLabel,
-            icon: "speaker.wave.3.fill",
-            title: "Speaker",
-            action: #selector(speakerButtonTapped)
-        )
-        secondaryControlsStack.addArrangedSubview(speakerContainer)
-        
-        // --- PRIMARY STACK (Glass Panel) ---
-        glassPanelView.backgroundColor = UIColor(red: 0.06, green: 0.1, blue: 0.13, alpha: 0.75)
-        glassPanelView.layer.cornerRadius = 24
-        glassPanelView.layer.borderWidth = 1
-        glassPanelView.layer.borderColor = UIColor.white.withAlphaComponent(0.05).cgColor
-        glassPanelView.translatesAutoresizingMaskIntoConstraints = false
-        bottomControlsContainer.addSubview(glassPanelView)
-        
-        // Primary controls stack (Mute, End, Video)
-        primaryControlsStack.axis = .horizontal
-        primaryControlsStack.distribution = .equalSpacing
-        primaryControlsStack.spacing = 40
-        primaryControlsStack.translatesAutoresizingMaskIntoConstraints = false
-        glassPanelView.addSubview(primaryControlsStack)
-        
-        // Mute
-        setupPrimaryControl(
-            container: muteContainer,
-            button: muteButton,
-            label: muteLabel,
-            icon: "mic.fill",
-            title: "Mute",
-            size: 48,
-            action: #selector(muteButtonTapped)
-        )
-        primaryControlsStack.addArrangedSubview(muteContainer)
-        
-        // End Call
-        setupPrimaryControl(
-            container: endContainer,
-            button: endButton,
-            label: endLabel,
-            icon: "phone.down.fill",
-            title: "End",
-            size: 56,
-            backgroundColor: .systemRed,
-            action: #selector(endButtonTapped)
-        )
-        endLabel.font = UIFont.systemFont(ofSize: 10, weight: .bold)
-        endLabel.textColor = .white
-        primaryControlsStack.addArrangedSubview(endContainer)
-        
-        // Video Toggle
-        setupPrimaryControl(
-            container: videoContainer,
-            button: videoButton,
-            label: videoLabel,
-            icon: "video.fill",
-            title: "Video",
-            size: 48,
-            action: #selector(videoButtonTapped)
-        )
-        primaryControlsStack.addArrangedSubview(videoContainer)
-    }
+            bottomControlsContainer.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(bottomControlsContainer)
+            
+            // --- PRIMARY STACK (Glass Panel) ---
+            glassPanelView.backgroundColor = UIColor(red: 0.06, green: 0.1, blue: 0.13, alpha: 0.75)
+            glassPanelView.layer.cornerRadius = 24
+            glassPanelView.layer.borderWidth = 1
+            glassPanelView.layer.borderColor = UIColor.white.withAlphaComponent(0.05).cgColor
+            glassPanelView.translatesAutoresizingMaskIntoConstraints = false
+            bottomControlsContainer.addSubview(glassPanelView)
+            
+            // Primary controls stack (Mute, End, Video)
+            primaryControlsStack.axis = .horizontal
+            primaryControlsStack.distribution = .equalSpacing
+            primaryControlsStack.spacing = 40
+            primaryControlsStack.translatesAutoresizingMaskIntoConstraints = false
+            glassPanelView.addSubview(primaryControlsStack)
+            
+            // Mute
+            setupPrimaryControl(
+                container: muteContainer,
+                button: muteButton,
+                label: muteLabel,
+                icon: "mic.fill",
+                title: "Mute",
+                size: 48,
+                action: #selector(muteButtonTapped)
+            )
+            primaryControlsStack.addArrangedSubview(muteContainer)
+            
+            // End Call
+            setupPrimaryControl(
+                container: endContainer,
+                button: endButton,
+                label: endLabel,
+                icon: "phone.down.fill",
+                title: "End",
+                size: 56,
+                backgroundColor: .systemRed,
+                action: #selector(endButtonTapped)
+            )
+            endLabel.font = UIFont.systemFont(ofSize: 10, weight: .bold)
+            endLabel.textColor = .white
+            primaryControlsStack.addArrangedSubview(endContainer)
+            
+            // Video Toggle
+            setupPrimaryControl(
+                container: videoContainer,
+                button: videoButton,
+                label: videoLabel,
+                icon: "video.fill",
+                title: "Video",
+                size: 48,
+                action: #selector(videoButtonTapped)
+            )
+            primaryControlsStack.addArrangedSubview(videoContainer)
+        }
     
     private func setupSecondaryControl(container: UIView, button: UIButton, label: UILabel, icon: String, title: String, action: Selector) {
         container.translatesAutoresizingMaskIntoConstraints = false
@@ -620,68 +648,63 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
             label.bottomAnchor.constraint(equalTo: container.bottomAnchor)
         ])
     }
-    
     private func setupConstraints() {
-        NSLayoutConstraint.activate([
-            // Remote video (full screen)
-            remoteVideoContainer.topAnchor.constraint(equalTo: view.topAnchor),
-            remoteVideoContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            remoteVideoContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            remoteVideoContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            NSLayoutConstraint.activate([
+                // Remote video (full screen)
+                remoteVideoContainer.topAnchor.constraint(equalTo: view.topAnchor),
+                remoteVideoContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                remoteVideoContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                remoteVideoContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+                
+                // Gradient overlays
+                gradientOverlayTop.topAnchor.constraint(equalTo: view.topAnchor),
+                gradientOverlayTop.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                gradientOverlayTop.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                gradientOverlayTop.heightAnchor.constraint(equalToConstant: 200),
+                
+                gradientOverlayBottom.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                gradientOverlayBottom.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                gradientOverlayBottom.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+                gradientOverlayBottom.heightAnchor.constraint(equalToConstant: 250),
+                
+                // Top bar
+                topBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+                topBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+                topBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+                
+                topBarStack.topAnchor.constraint(equalTo: topBar.topAnchor, constant: 16),
+                topBarStack.leadingAnchor.constraint(equalTo: topBar.leadingAnchor),
+                topBarStack.trailingAnchor.constraint(equalTo: topBar.trailingAnchor),
+                topBarStack.bottomAnchor.constraint(equalTo: topBar.bottomAnchor, constant: -16),
+                
+                // Local video sizes
+                localVideoContainer.widthAnchor.constraint(equalToConstant: 112),
+                localVideoContainer.heightAnchor.constraint(equalToConstant: 160),
+                
+                // Bottom controls container
+                bottomControlsContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+                bottomControlsContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+                bottomControlsContainer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
+                
+                // Glass panel (ARTIK SECONDARY STACK YOK, DOĞRUDAN CONTAINER'A BAĞLI)
+                glassPanelView.topAnchor.constraint(equalTo: bottomControlsContainer.topAnchor),
+                glassPanelView.centerXAnchor.constraint(equalTo: bottomControlsContainer.centerXAnchor),
+                glassPanelView.bottomAnchor.constraint(equalTo: bottomControlsContainer.bottomAnchor),
+                glassPanelView.widthAnchor.constraint(equalTo: bottomControlsContainer.widthAnchor, multiplier: 0.95),
+                
+                // Primary controls stack
+                primaryControlsStack.topAnchor.constraint(equalTo: glassPanelView.topAnchor, constant: 32),
+                primaryControlsStack.centerXAnchor.constraint(equalTo: glassPanelView.centerXAnchor),
+                primaryControlsStack.bottomAnchor.constraint(equalTo: glassPanelView.bottomAnchor, constant: -32)
+            ])
             
-            // Gradient overlays
-            gradientOverlayTop.topAnchor.constraint(equalTo: view.topAnchor),
-            gradientOverlayTop.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            gradientOverlayTop.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            gradientOverlayTop.heightAnchor.constraint(equalToConstant: 200),
+            // Setup local video positioning constraints separately
+            localVideoTopConstraint = localVideoContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 16)
+            localVideoTrailingConstraint = localVideoContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16)
             
-            gradientOverlayBottom.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            gradientOverlayBottom.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            gradientOverlayBottom.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            gradientOverlayBottom.heightAnchor.constraint(equalToConstant: 250),
-            
-            // Top bar
-            topBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            topBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-            topBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            
-            topBarStack.topAnchor.constraint(equalTo: topBar.topAnchor, constant: 16),
-            topBarStack.leadingAnchor.constraint(equalTo: topBar.leadingAnchor),
-            topBarStack.trailingAnchor.constraint(equalTo: topBar.trailingAnchor),
-            topBarStack.bottomAnchor.constraint(equalTo: topBar.bottomAnchor, constant: -16),
-            
-            // Local video (top-right corner)
-            localVideoContainer.widthAnchor.constraint(equalToConstant: 112),
-            localVideoContainer.heightAnchor.constraint(equalToConstant: 160),
-            
-            // Bottom controls container
-            bottomControlsContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-            bottomControlsContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            bottomControlsContainer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
-            
-            // Secondary controls stack
-            secondaryControlsStack.topAnchor.constraint(equalTo: bottomControlsContainer.topAnchor),
-            secondaryControlsStack.centerXAnchor.constraint(equalTo: bottomControlsContainer.centerXAnchor),
-            
-            // Glass panel
-            glassPanelView.topAnchor.constraint(equalTo: secondaryControlsStack.bottomAnchor, constant: 12),
-            glassPanelView.centerXAnchor.constraint(equalTo: bottomControlsContainer.centerXAnchor),
-            glassPanelView.bottomAnchor.constraint(equalTo: bottomControlsContainer.bottomAnchor),
-            glassPanelView.widthAnchor.constraint(equalTo: bottomControlsContainer.widthAnchor, multiplier: 0.95),
-            
-            // Primary controls stack
-            primaryControlsStack.topAnchor.constraint(equalTo: glassPanelView.topAnchor, constant: 32),
-            primaryControlsStack.centerXAnchor.constraint(equalTo: glassPanelView.centerXAnchor),
-            primaryControlsStack.bottomAnchor.constraint(equalTo: glassPanelView.bottomAnchor, constant: -32)
-        ])
-        
-        // Setup local video positioning constraints separately
-        localVideoTopConstraint = localVideoContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 16)
-        localVideoTrailingConstraint = localVideoContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16)
-        
-        localVideoTopConstraint.isActive = true
-        localVideoTrailingConstraint?.isActive = true
-    }
+            localVideoTopConstraint.isActive = true
+            localVideoTrailingConstraint?.isActive = true
+        }
     
     private func setupVideoViews() {
         guard let webRTCClient = webRTCClient else { return }
@@ -725,24 +748,6 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
     // MARK: - Actions
     @objc private func switchCameraTapped() {
         webRTCClient?.switchCamera()
-    }
-    
-    @objc private func speakerButtonTapped() {
-        isSpeakerOn.toggle()
-        let audioSession = AVAudioSession.sharedInstance()
-        
-        do {
-            if isSpeakerOn {
-                try audioSession.overrideOutputAudioPort(.speaker)
-            } else {
-                try audioSession.overrideOutputAudioPort(.none)
-            }
-            
-            let config = UIImage.SymbolConfiguration(pointSize: 20, weight: .regular)
-            speakerButton.setImage(UIImage(systemName: isSpeakerOn ? "speaker.slash.fill" : "speaker.wave.3.fill", withConfiguration: config), for: .normal)
-        } catch {
-            print("Failed to toggle speaker: \(error)")
-        }
     }
     
     @objc private func muteButtonTapped() {

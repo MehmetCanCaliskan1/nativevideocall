@@ -26,11 +26,30 @@ class SignalingHandler(
         socket.on("webrtc-offer", onOffer)
         socket.on("webrtc-answer", onAnswer)
         socket.on("webrtc-ice", onIceCandidate)
+        socket.on("room-joined", onRoomJoined)
         socket.on(Socket.EVENT_DISCONNECT, onDisconnect)
     }
 
     /*  SOCKET EVENTS  */
+    private val onRoomJoined = Emitter.Listener { args ->
+        val data = args[0] as JSONObject
+        // Sunucudan gelen veriyi ayrıştır
+        val status = data.optString("status")
+        val isHost = data.optBoolean("isHost")
 
+        Log.d(TAG, "Odaya katılındı: Status=$status, Host=$isHost")
+
+        // Eğer onaylandıysak ve Host biz DEĞİLSEK (yani misafirsek), aramayı biz başlatmalıyız.
+        if (status == "approved" && !isHost) {
+            Log.d(TAG, "Misafir girişi onaylandı, Offer oluşturuluyor...")
+
+            // Peer (WebRTC motoru) yoksa oluştur, varsa getir
+            val peer = getPeer() ?: onPeerCreated()
+
+            // --- SİHİRLİ DOKUNUŞ BURASI ---
+            peer.createOffer()
+        }
+    }
     private val onConnect = Emitter.Listener {
         Log.d(TAG, "Socket connected")
 
@@ -92,16 +111,24 @@ class SignalingHandler(
     }
 
     fun sendOffer(sdp: SessionDescription) {
-        if (targetSocketId == null) return
+        val payload = JSONObject()
 
-        val payload = JSONObject().apply {
-            put("to", targetSocketId)
-            put("offer", JSONObject().apply {
-                put("type", sdp.type.canonicalForm())
-                put("sdp", sdp.description)
-            })
+        // 1. Eğer hedef ID belliyse ekle, değilse boş bırak (Sunucu broadcast yapar)
+        if (targetSocketId != null) {
+            payload.put("to", targetSocketId)
         }
 
+        // 2. Offer objesini oluştur
+        val offerJson = JSONObject().apply {
+            put("type", sdp.type.canonicalForm())
+            put("sdp", sdp.description)
+        }
+
+        // 3. Ana payload'a offer'ı ekle
+        payload.put("offer", offerJson)
+
+        // 4. Gönder
+        Log.d("Signaling", "Offer gönderiliyor. Hedef: ${targetSocketId ?: "TÜM ODA"}")
         socket.emit("webrtc-offer", payload)
     }
 
@@ -140,6 +167,7 @@ class SignalingHandler(
         socket.off("webrtc-answer", onAnswer)
         socket.off("webrtc-ice", onIceCandidate)
         socket.off(Socket.EVENT_DISCONNECT, onDisconnect)
+        socket.off("room-joined", onRoomJoined)
         socket.disconnect()
     }
 }

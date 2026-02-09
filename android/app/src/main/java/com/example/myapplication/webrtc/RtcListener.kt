@@ -17,4 +17,8 @@ interface RtcListener {
     fun onPeersConnectionStatusChange(success: Boolean)
 
 
-    fun onJoinRequest(participantId: String, participantName: String?) }
+    fun onJoinRequest(participantId: String, participantName: String?)
+    fun onJoinRejected(reason: String)
+
+
+}

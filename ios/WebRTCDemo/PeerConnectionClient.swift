@@ -155,16 +155,52 @@ class WebRTCClient: NSObject, RTCPeerConnectionDelegate, RTCVideoViewDelegate {
     }
     
     // MARK: - Private Setup Methods
-    private func setupPeerConnection() -> RTCPeerConnection {
-        let rtcConf = RTCConfiguration()
-        rtcConf.iceServers = [RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302"])]
+    // MARK: - Private Setup Methods
+        private func setupPeerConnection() -> RTCPeerConnection {
+            let rtcConf = RTCConfiguration()
+            
+            // 1. ICE Sunucuları (STUN ve TURN)
+            rtcConf.iceServers = [
+                RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302"]),
+                
+                
+                 RTCIceServer(
+                    urlStrings: ["turn:global.relay.metered.ca:80"],
+                    username: "cbed5ed13e67a0e746979a5b",
+                    credential: "Cy6b78fOFK5r8GZ5"
+                 )
+               
+            ]
         
-        let mediaConstraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
-        
-        let pc = self.peerConnectionFactory.peerConnection(with: rtcConf, constraints: mediaConstraints, delegate: nil)
-        return pc!
-    }
-    
+            rtcConf.sdpSemantics = .unifiedPlan
+            
+            // 3. Ağ ve Taşıma Politikaları (Optimizasyon)
+          
+            rtcConf.bundlePolicy = .maxBundle
+            
+            rtcConf.rtcpMuxPolicy = .require
+            
+            rtcConf.iceTransportPolicy = .all
+            
+            // Medya Kısıtlamaları (Constraints)
+         
+            let mediaConstraints = RTCMediaConstraints(
+                mandatoryConstraints: nil,
+                optionalConstraints: ["DtlsSrtpKeyAgreement": "true"]
+            )
+            
+            //Peer Connection Oluşturma
+           
+            guard let pc = self.peerConnectionFactory.peerConnection(
+                with: rtcConf,
+                constraints: mediaConstraints,
+                delegate: self
+            ) else {
+                fatalError("PeerConnection factory failed to create a connection")
+            }
+            
+            return pc
+        }
     private func setupView() {
         // Local View
         localRenderView = RTCMTLVideoView()
