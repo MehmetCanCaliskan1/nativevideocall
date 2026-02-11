@@ -17,9 +17,7 @@ class SignalingHandler(
     companion object {
         private const val TAG = "SignalingHandler"
     }
-
-    // Karşı tarafın socket id'si
-    private var targetSocketId: String? = null
+    var remoteTargetId: String? = null
 
     fun setupListeners() {
         socket.on(Socket.EVENT_CONNECT, onConnect)
@@ -30,144 +28,153 @@ class SignalingHandler(
         socket.on(Socket.EVENT_DISCONNECT, onDisconnect)
     }
 
-    /*  SOCKET EVENTS  */
-    private val onRoomJoined = Emitter.Listener { args ->
-        val data = args[0] as JSONObject
-        // Sunucudan gelen veriyi ayrıştır
-        val status = data.optString("status")
-        val isHost = data.optBoolean("isHost")
-
-        Log.d(TAG, "Odaya katılındı: Status=$status, Host=$isHost")
-
-        // Eğer onaylandıysak ve Host biz DEĞİLSEK (yani misafirsek), aramayı biz başlatmalıyız.
-        if (status == "approved" && !isHost) {
-            Log.d(TAG, "Misafir girişi onaylandı, Offer oluşturuluyor...")
-
-            // Peer (WebRTC motoru) yoksa oluştur, varsa getir
-            val peer = getPeer() ?: onPeerCreated()
-
-            // --- SİHİRLİ DOKUNUŞ BURASI ---
-            peer.createOffer()
-        }
-    }
     private val onConnect = Emitter.Listener {
         Log.d(TAG, "Socket connected")
-
         val obj = JSONObject().apply {
             put("roomId", roomId)
             put("username", "Android User")
         }
-
         socket.emit("join-room", obj)
     }
 
+    private val onRoomJoined = Emitter.Listener { args ->
+        val data = args[0] as JSONObject
+        val status = data.optString("status")
+        val isHost = data.optBoolean("isHost")
+        val users = data.optJSONArray("users")
+
+        Log.d(TAG, "Odaya katılındı: Status=$status, Host=$isHost")
+
+        // Eğer biz MİSAFİR isek, Host'un ID'sini bulup kaydetmeliyiz.
+        if (status == "approved" && !isHost && users != null) {
+            for (i in 0 until users.length()) {
+                val user = users.getJSONObject(i)
+                if (user.optBoolean("isHost")) {
+                    remoteTargetId = user.getString("socketId")
+                    Log.d(TAG, "Host ID bulundu ve kaydedildi: $remoteTargetId")
+                    break
+                }
+            }
+
+            // Misafir kabul edildiğinde offer'ı başlatır
+            Log.d(TAG, "Misafir girişi onaylandı, Offer oluşturuluyor...")
+            val peer = getPeer() ?: onPeerCreated()
+            peer.createOffer()
+        }
+    }
 
     private val onDisconnect = Emitter.Listener {
         Log.d(TAG, "Socket disconnected")
     }
 
+    // --- OFFER ALMA (Backendden gelen: { from: "...", offer: {...} }) ---
     private val onOffer = Emitter.Listener { args ->
-        val data = args[0] as JSONObject
+        Log.d(TAG, "Webrtc Offer Alındı")
+        try {
+            val data = args[0] as JSONObject
+            if (data.has("from")) {
+                remoteTargetId = data.getString("from")
+                Log.d(TAG, "Offer kimden geldi: $remoteTargetId")
+            }
 
-        targetSocketId = data.getString("from")
-        val offer = data.getJSONObject("offer")
+            val offerJson = data.getJSONObject("offer")
+            val sdpString = offerJson.getString("sdp")
 
-        val peer = getPeer() ?: onPeerCreated()
+            val peer = getPeer() ?: onPeerCreated()
+            val sdp = SessionDescription(SessionDescription.Type.OFFER, sdpString)
 
-        val sdp = SessionDescription(
-            SessionDescription.Type.OFFER,
-            offer.getString("sdp")
-        )
-
-        peer.setRemoteDescription(sdp)
-        peer.createAnswer()
+            peer.setRemoteDescription(sdp)
+            peer.createAnswer()
+        } catch (e: Exception) {
+            Log.e(TAG, "Offer işlenirken hata", e)
+        }
     }
 
+    // ANSWER ALMA
     private val onAnswer = Emitter.Listener { args ->
-        val data = args[0] as JSONObject
+        Log.d(TAG, "Webrtc Answer Alındı")
+        try {
+            val data = args[0] as JSONObject
+            val answerJson = data.getJSONObject("answer")
+            val sdpString = answerJson.getString("sdp")
 
-        targetSocketId = data.getString("from")
-        val answer = data.getJSONObject("answer")
-
-        val sdp = SessionDescription(
-            SessionDescription.Type.ANSWER,
-            answer.getString("sdp")
-        )
-
-        getPeer()?.setRemoteDescription(sdp)
+            val sdp = SessionDescription(SessionDescription.Type.ANSWER, sdpString)
+            getPeer()?.setRemoteDescription(sdp)
+        } catch (e: Exception) {
+            Log.e(TAG, "Answer işlenirken hata", e)
+        }
     }
 
+    // ICE CANDIDATE
     private val onIceCandidate = Emitter.Listener { args ->
-        val data = args[0] as JSONObject
-        val candidateObj = data.getJSONObject("candidate")
+        try {
+            val data = args[0] as JSONObject
+            val candidateJson = data.getJSONObject("candidate")
 
-        val candidate = IceCandidate(
-            candidateObj.getString("sdpMid"),
-            candidateObj.getInt("sdpMLineIndex"),
-            candidateObj.getString("candidate")
-        )
+            val candidate = IceCandidate(
+                candidateJson.getString("sdpMid"),
+                candidateJson.getInt("sdpMLineIndex"),
+                candidateJson.getString("candidate")
+            )
 
-        getPeer()?.addIceCandidate(candidate)
+            getPeer()?.addIceCandidate(candidate)
+        } catch (e: Exception) {
+            Log.e(TAG, "ICE Candidate işlenirken hata", e)
+        }
     }
+
 
     fun sendOffer(sdp: SessionDescription) {
+        if (remoteTargetId == null) {
+            Log.e(TAG, "HATA: Hedef ID (remoteTargetId) null! Offer gönderilemiyor.")
+            return
+        }
         val payload = JSONObject()
+        val offerJson = JSONObject()
 
-        // 1. Eğer hedef ID belliyse ekle, değilse boş bırak (Sunucu broadcast yapar)
-        if (targetSocketId != null) {
-            payload.put("to", targetSocketId)
-        }
+        offerJson.put("type", "offer")
+        offerJson.put("sdp", sdp.description)
 
-        // 2. Offer objesini oluştur
-        val offerJson = JSONObject().apply {
-            put("type", sdp.type.canonicalForm())
-            put("sdp", sdp.description)
-        }
-
-        // 3. Ana payload'a offer'ı ekle
+        payload.put("to", remoteTargetId)
         payload.put("offer", offerJson)
 
-        // 4. Gönder
-        Log.d("Signaling", "Offer gönderiliyor. Hedef: ${targetSocketId ?: "TÜM ODA"}")
+        Log.d(TAG, "Offer GÖNDERİLİYOR -> Hedef: $remoteTargetId")
         socket.emit("webrtc-offer", payload)
     }
 
     fun sendAnswer(sdp: SessionDescription) {
-        if (targetSocketId == null) return
+        if (remoteTargetId == null) return
 
-        val payload = JSONObject().apply {
-            put("to", targetSocketId)
-            put("answer", JSONObject().apply {
-                put("type", sdp.type.canonicalForm())
-                put("sdp", sdp.description)
-            })
-        }
+        // Backend yapısı: { to: "targetId", answer: { type: "answer", sdp: "..." } }
+        val payload = JSONObject()
+        val answerJson = JSONObject()
 
+        answerJson.put("type", "answer")
+        answerJson.put("sdp", sdp.description)
+
+        payload.put("to", remoteTargetId)
+        payload.put("answer", answerJson)
+
+        Log.d(TAG, "Answer GÖNDERİLİYOR -> Hedef: $remoteTargetId")
         socket.emit("webrtc-answer", payload)
     }
 
     fun sendIceCandidate(candidate: IceCandidate) {
-        if (targetSocketId == null) return
+        if (remoteTargetId == null) return
+        val payload = JSONObject()
+        val candidateJson = JSONObject()
 
-        val payload = JSONObject().apply {
-            put("to", targetSocketId)
-            put("candidate", JSONObject().apply {
-                put("sdpMid", candidate.sdpMid)
-                put("sdpMLineIndex", candidate.sdpMLineIndex)
-                put("candidate", candidate.sdp)
-            })
-        }
+        candidateJson.put("sdpMid", candidate.sdpMid)
+        candidateJson.put("sdpMLineIndex", candidate.sdpMLineIndex)
+        candidateJson.put("candidate", candidate.sdp)
+
+        payload.put("to", remoteTargetId)
+        payload.put("candidate", candidateJson)
 
         socket.emit("webrtc-ice", payload)
     }
 
     fun disconnect() {
-        socket.off(Socket.EVENT_CONNECT, onConnect)
-        socket.off("webrtc-offer", onOffer)
-        socket.off("webrtc-answer", onAnswer)
-        socket.off("webrtc-ice", onIceCandidate)
-        socket.off(Socket.EVENT_DISCONNECT, onDisconnect)
-        socket.off("room-joined", onRoomJoined)
         socket.disconnect()
     }
 }
