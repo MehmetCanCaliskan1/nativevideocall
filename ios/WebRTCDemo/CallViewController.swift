@@ -3,7 +3,7 @@ import SocketIO
 import WebRTC
 import AVFoundation
 
-let SERVER_URL = "http://10.246.26.152:443"
+let SERVER_URL = "http://10.246.76.192:443"
 
 class CallViewController: UIViewController, WebRTCClientDelegate {
     var targetSocketId: String?

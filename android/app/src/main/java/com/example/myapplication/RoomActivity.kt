@@ -32,7 +32,7 @@ import androidx.core.graphics.toColorInt
 import java.lang.ref.WeakReference
 import androidx.appcompat.app.AlertDialog
 class RoomActivity : AppCompatActivity(), RtcListener {
-
+    private var isCurrentUserHost = false
     companion object {
         private val TAG = RoomActivity::class.java.canonicalName
         private val RequiredPermissions = arrayOf(
@@ -62,14 +62,9 @@ class RoomActivity : AppCompatActivity(), RtcListener {
     private var audioEnabled = true
     private var isAppInForeground = true
     private var needsCameraRestart = false
-
-
     private var dX = 0f
     private var dY = 0f
     private var lastAction = 0
-    private lateinit var participantNameText: TextView
-
-    // Messaging
     private var messageBottomSheet: BottomSheetDialog? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -132,7 +127,6 @@ class RoomActivity : AppCompatActivity(), RtcListener {
 
         // Initialize TextViews
         val roomIdText = findViewById<TextView>(R.id.room_id)
-        participantNameText = findViewById(R.id.participant_name)
 
         // Set room ID
         roomIdText.text = "Room: $roomId"
@@ -420,7 +414,7 @@ class RoomActivity : AppCompatActivity(), RtcListener {
 
     override fun onStatusChanged(newStatus: String) {
         runOnUiThread {
-            Toast.makeText(this@RoomActivity, newStatus, Toast.LENGTH_SHORT).show()
+           // Toast.makeText(this@RoomActivity, newStatus, Toast.LENGTH_SHORT).show()
 
             val roomIdText = findViewById<TextView>(R.id.room_id)
 
@@ -463,11 +457,12 @@ class RoomActivity : AppCompatActivity(), RtcListener {
     }
 
     override fun onRemoveRemoteStream() {
-        Log.d(TAG, "onRemoveRemoteStream")
         runOnUiThread {
+            // 1. Karşı tarafın donmuş görüntüsünü temizle
             remoteView.clearImage()
+            remoteView.requestLayout()
 
-            // Revert local view container to original position (top-right)
+            // 2. Kendi görüntünü (Local View) tekrar sağ üst köşeye küçült
             val localViewContainer = findViewById<FrameLayout>(R.id.local_view_container)
             val params = localViewContainer.layoutParams as FrameLayout.LayoutParams
             params.width = (resources.displayMetrics.density * 112).toInt()
@@ -475,11 +470,37 @@ class RoomActivity : AppCompatActivity(), RtcListener {
             params.rightMargin = (resources.displayMetrics.density * 16).toInt()
             params.topMargin = (resources.displayMetrics.density * 80).toInt()
             params.gravity = Gravity.TOP or Gravity.END
-
             localViewContainer.layoutParams = params
+            localViewContainer.visibility = View.VISIBLE
+
+            // 3. HOST / GUEST AYRIMI (iOS Mantığı)
+            if (isCurrentUserHost) {
+                // --- HOST SENARYOSU ---
+                // iOS'te: self.showToast(...) yapıyordu, odadan atmıyordu.
+                // Host odada kalır, yeni bir misafir bekleyebilir.
+                Toast.makeText(this, "Misafir odadan ayrıldı.", Toast.LENGTH_LONG).show()
+
+                // Durum yazısını güncelle (Bekleniyor moduna al)
+                val roomIdText = findViewById<TextView>(R.id.room_id)
+                roomIdText.text = "Room: $roomId (Bağlantı Bekleniyor...)"
+                roomIdText.setTextColor(Color.YELLOW)
+
+            } else{
+                AlertDialog.Builder(this)
+                    .setTitle("Görüşme Sonlandı")
+                    .setMessage("Host odadan ayrıldığı için görüşme sonlandırıldı.")
+                    .setPositiveButton("Tamam") { _, _ ->
+                        peerConnectionClient?.onDestroy()
+                        val intent = Intent(this, HomeActivity::class.java)
+                        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(intent)
+                        finish()
+                    }
+                    .setCancelable(false)
+                    .show()
+            }
         }
     }
-
     override fun onPeersConnectionStatusChange(success: Boolean) {
         Log.d(TAG, "onPeersConnectionStatusChange: Success=$success")
 
@@ -498,11 +519,10 @@ class RoomActivity : AppCompatActivity(), RtcListener {
                 .setCancelable(false)
                 .setPositiveButton("Kabul Et") { dialog, _ ->
                     // 1. Sunucuya kabul kararını bildir
-                    peerConnectionClient?.sendJoinDecision(participantId, nameToShow, true)                    // 2. ARAYÜZÜ GÜNCELLE (Burası eklendi)
-                    // Bağlantı kurulana kadar "Connecting" (Sarı) durumuna geçiriyoruz.
+                    peerConnectionClient?.sendJoinDecision(participantId, nameToShow, true)
                     onStatusChanged("CONNECTING")
 
-                    Toast.makeText(this, "$nameToShow kabul edildi, bağlanılıyor...", Toast.LENGTH_SHORT).show()
+                   // Toast.makeText(this, "$nameToShow kabul edildi, bağlanılıyor...", Toast.LENGTH_SHORT).show()
                     dialog.dismiss()
                 }
                 .setNegativeButton("Reddet") { dialog, _ ->
@@ -535,15 +555,15 @@ class RoomActivity : AppCompatActivity(), RtcListener {
             finish()
         }
     }
-
     override fun onRoleDataReceived(isHost: Boolean) {
+        this.isCurrentUserHost = isHost
         runOnUiThread {
             if (isHost) {
                 roleBadge.text = "HOST"
-                roleBadge.setBackgroundColor(Color.parseColor("#AAFF0000")) // Kırmızımsı
+                roleBadge.setBackgroundColor(Color.parseColor("#AAFF0000"))
             } else {
                 roleBadge.text = "GUEST"
-                roleBadge.setBackgroundColor(Color.parseColor("#AA0000FF")) // Mavimsi
+                roleBadge.setBackgroundColor(Color.parseColor("#AA0000FF"))
             }
         }
     }

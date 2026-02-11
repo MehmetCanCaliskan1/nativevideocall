@@ -141,7 +141,10 @@ class PeerConnectionClient(
             // Activity'e haber ver
             rtcListener.onJoinRejected("Host isteğinizi reddetti.")
         }
-
+        socket.on("user-disconnected") {
+            // Bu kod sunucudan sinyal gelir gelmez çalışır
+            rtcListener.onRemoveRemoteStream()
+        }
 
        
         socket.connect()
