@@ -6,12 +6,12 @@ import io.socket.emitter.Emitter
 import org.json.JSONObject
 import org.webrtc.IceCandidate
 import org.webrtc.SessionDescription
-
 class SignalingHandler(
     private val socket: Socket,
     private val roomId: String,
     private val onPeerCreated: () -> WebRtcPeer,
-    private val getPeer: () -> WebRtcPeer?
+    private val getPeer: () -> WebRtcPeer?,
+    private val listener: RtcListener
 ) {
 
     companion object {
@@ -38,28 +38,34 @@ class SignalingHandler(
     }
 
     private val onRoomJoined = Emitter.Listener { args ->
-        val data = args[0] as JSONObject
-        val status = data.optString("status")
-        val isHost = data.optBoolean("isHost")
-        val users = data.optJSONArray("users")
+        try {
+            val data = args[0] as JSONObject
 
-        Log.d(TAG, "Odaya katılındı: Status=$status, Host=$isHost")
+            val isHost = data.optBoolean("isHost", false)
+            val status = data.optString("status", "")
 
-        // Eğer biz MİSAFİR isek, Host'un ID'sini bulup kaydetmeliyiz.
-        if (status == "approved" && !isHost && users != null) {
-            for (i in 0 until users.length()) {
-                val user = users.getJSONObject(i)
-                if (user.optBoolean("isHost")) {
-                    remoteTargetId = user.getString("socketId")
-                    Log.d(TAG, "Host ID bulundu ve kaydedildi: $remoteTargetId")
-                    break
+            Log.d(TAG, "Odaya katılındı! Status: $status, Host mu: $isHost")
+
+            listener.onRoleDataReceived(isHost)
+
+            if (status == "approved" && !isHost) {
+                val users = data.optJSONArray("users")
+                if (users != null) {
+                    for (i in 0 until users.length()) {
+                        val user = users.getJSONObject(i)
+                        if (user.optBoolean("isHost")) {
+                            remoteTargetId = user.getString("socketId")
+                            break
+                        }
+                    }
                 }
-            }
 
-            // Misafir kabul edildiğinde offer'ı başlatır
-            Log.d(TAG, "Misafir girişi onaylandı, Offer oluşturuluyor...")
-            val peer = getPeer() ?: onPeerCreated()
-            peer.createOffer()
+                Log.d(TAG, "Misafir onaylandı, WebRTC Offer hazırlanıyor...")
+                val peer = getPeer() ?: onPeerCreated()
+                peer.createOffer()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "onRoomJoined işlenirken hata oluştu", e)
         }
     }
 
@@ -67,7 +73,7 @@ class SignalingHandler(
         Log.d(TAG, "Socket disconnected")
     }
 
-    // --- OFFER ALMA (Backendden gelen: { from: "...", offer: {...} }) ---
+    // --- OFFER
     private val onOffer = Emitter.Listener { args ->
         Log.d(TAG, "Webrtc Offer Alındı")
         try {

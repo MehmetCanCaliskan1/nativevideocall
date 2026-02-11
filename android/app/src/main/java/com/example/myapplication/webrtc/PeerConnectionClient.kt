@@ -93,7 +93,8 @@ class PeerConnectionClient(
             socket = socket,
             roomId = roomId,
             onPeerCreated = { createPeer() },
-            getPeer = { peer }
+            getPeer = { peer },
+            listener = rtcListener
         )
 
         signalingHandler.setupListeners()

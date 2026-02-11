@@ -3,17 +3,9 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="#F8FAFC">
 
-
-
-    <!-- Dim Overlay -->
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="#B3FFFFFF" />
-
-    <!-- Main Content -->
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
@@ -24,133 +16,106 @@
             android:layout_height="wrap_content"
             android:paddingHorizontal="24dp">
 
-            <!-- Glass Panel Container -->
-            <androidx.cardview.widget.CardView
+            <com.google.android.material.card.MaterialCardView
                 android:id="@+id/glassPanelCard"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:minHeight="400dp"
-                android:layout_marginHorizontal="0dp"
-                app:cardBackgroundColor="@color/glass_panel"
-                app:cardCornerRadius="45dp"
+                app:cardBackgroundColor="#FFFFFF"
+                app:cardCornerRadius="40dp"
+                app:cardElevation="6dp"
+                app:strokeColor="#F1F5F9"
+                app:strokeWidth="2dp"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toTopOf="parent"
-                app:layout_constraintWidth_max="400dp">
+                app:layout_constraintWidth_max="450dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:gravity="center"
                     android:orientation="vertical"
-                    android:padding="32dp">
+                    android:padding="40dp">
 
-                    <!-- Title -->
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:letterSpacing="0.01"
-                        android:text="HOŞ GELDİNİZ"
-                        android:textColor="@color/white"
-                        android:textSize="34sp"
-                        android:textStyle="bold" />
+                        android:text="Hoş Geldiniz"
+                        android:textColor="#1E293B"
+                        android:textSize="36sp"
+                        android:fontFamily="sans-serif-black"
+                        android:paddingBottom="50dp"/>
 
-                    <!-- Subtitle -->
 
-                    <!-- Input Container -->
-                    <FrameLayout
+
+                    <com.google.android.material.textfield.TextInputLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="10dp">
+                        android:layout_marginBottom="28dp"
+                        app:hintEnabled="false"
+                        app:boxStrokeColor="#F97316"
+                        app:boxStrokeWidth="2dp"
+                        app:boxCornerRadiusTopStart="20dp"
+                        app:boxCornerRadiusTopEnd="20dp"
+                        app:boxCornerRadiusBottomStart="20dp"
+                        app:boxCornerRadiusBottomEnd="20dp"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
 
-                        <!-- Hash Icon -->
-
-                        <!-- Room Number Input -->
-                        <EditText
+                        <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/roomIDText"
                             android:layout_width="match_parent"
-                            android:layout_height="56dp"
-                            android:background="@drawable/input_background"
+                            android:layout_height="75dp"
+                            android:hint="Oda Numarası"
                             android:gravity="center"
-                            android:hint="Room Number"
                             android:inputType="number"
-                            android:letterSpacing="0.1"
-                            android:paddingHorizontal="48dp"
-                            android:paddingVertical="16dp"
-                            android:textColor="@color/white"
-                            android:textColorHint="@color/white_20"
-                            android:textSize="18sp"
-                            android:textStyle="bold" />
-                    </FrameLayout>
+                            android:textColor="#1E293B"
+                            android:textSize="22sp"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.1" />
+                    </com.google.android.material.textfield.TextInputLayout>
 
-                    <!-- Join Room Button -->
-                    <Button
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnJoin"
                         android:layout_width="match_parent"
-                        android:layout_height="56dp"
-                        android:layout_marginBottom="12dp"
-                        android:background="@color/background_gradient_start"
-                        android:drawablePadding="8dp"
-                        android:gravity="center"
-                        android:paddingHorizontal="24dp"
-                        android:text="Join Room"
+                        android:layout_height="70dp"
+                        android:text="Odaya Katıl"
                         android:textAllCaps="false"
-                        android:textColor="@color/white"
-                        android:textSize="16sp"
-                        android:textStyle="bold" />
+                        android:textSize="20sp"
+                        android:textStyle="bold"
+                        android:textColor="#FFFFFF"
+                        app:backgroundTint="#F97316"
+                        app:cornerRadius="20dp"
+                        app:elevation="4dp" />
 
-                    <!-- OR Divider -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginVertical="4dp"
-                        android:gravity="center_vertical"
+                        android:layout_marginVertical="24dp"
+                        android:gravity="center"
                         android:orientation="horizontal">
 
-                        <View
-                            android:layout_width="0dp"
-                            android:layout_height="1dp"
-                            android:layout_weight="1"
-                            android:background="@color/white_10" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:letterSpacing="0.1"
-                            android:paddingHorizontal="12dp"
-                            android:text="OR"
-                            android:textColor="@color/white_30"
-                            android:textSize="10sp"
-                            android:textStyle="bold" />
-
-                        <View
-                            android:layout_width="0dp"
-                            android:layout_height="1dp"
-                            android:layout_weight="1"
-                            android:background="@color/white_10" />
+                        <View android:layout_width="0dp" android:layout_height="1.5dp" android:layout_weight="1" android:background="#E2E8F0" />
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingHorizontal="16dp" android:text="VEYA" android:textColor="#94A3B8" android:textSize="14sp" android:textStyle="bold" />
+                        <View android:layout_width="0dp" android:layout_height="1.5dp" android:layout_weight="1" android:background="#E2E8F0" />
                     </LinearLayout>
 
-                    <!-- Join Random Room Button -->
-                    <Button
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnRandom"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                         android:layout_width="match_parent"
-                        android:layout_height="56dp"
-                        android:layout_marginTop="12dp"
-                        android:background="@color/background_gradient_start"
-                        android:drawablePadding="8dp"
-                        android:drawableTint="@color/white_60"
-                        android:gravity="center"
-                        android:paddingHorizontal="24dp"
-                        android:text="Join Random Room"
+                        android:layout_height="70dp"
+                        android:text="Oda Oluştur"
                         android:textAllCaps="false"
-                        android:textColor="@color/white"
-                        android:textSize="16sp" />
-                </LinearLayout>
-            </androidx.cardview.widget.CardView>
+                        android:textColor="#F97316"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        app:cornerRadius="20dp"
+                        app:strokeColor="#F97316"
+                        app:strokeWidth="2.5dp" />
 
-            <!-- App Name at Bottom -->
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
         </androidx.constraintlayout.widget.ConstraintLayout>
     </ScrollView>

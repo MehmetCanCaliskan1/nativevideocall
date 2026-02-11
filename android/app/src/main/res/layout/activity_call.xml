@@ -122,19 +122,30 @@
         android:layout_marginEnd="16dp"
         android:layout_marginBottom="280dp"
         android:elevation="8dp"
-        >
+        android:background="@android:color/black"> <org.webrtc.SurfaceViewRenderer
+        android:id="@+id/local_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
 
-        <org.webrtc.SurfaceViewRenderer
-            android:id="@+id/local_view"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
+        <TextView
+            android:id="@+id/local_role_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/badge_background"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="4dp"
+            android:text="Loading..."
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold" />
 
-        <!-- Mute Indicator on Local View -->
         <ImageView
             android:id="@+id/local_mute_indicator"
             android:layout_width="20dp"
             android:layout_height="20dp"
-            android:layout_gravity="bottom|end"
+            android:layout_gravity="top|end"
             android:layout_margin="8dp"
             android:background="@drawable/mute_indicator_background"
             android:padding="4dp"

@@ -20,5 +20,5 @@ interface RtcListener {
     fun onJoinRequest(participantId: String, participantName: String?)
     fun onJoinRejected(reason: String)
 
-
+    fun onRoleDataReceived(isHost: Boolean)
 }

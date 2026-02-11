@@ -4,10 +4,12 @@ import android.Manifest
 import android.animation.ObjectAnimator
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.graphics.Color
 import android.graphics.Point
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.Window
@@ -47,6 +49,7 @@ class RoomActivity : AppCompatActivity(), RtcListener {
     }
 
     private lateinit var mSocketAddress: String
+    private lateinit var roleBadge: TextView
     private lateinit var roomId: String
     private val permissionChecker = PermissionChecker()
     private var peerConnectionClient: PeerConnectionClient? = null
@@ -72,7 +75,8 @@ class RoomActivity : AppCompatActivity(), RtcListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestWindowFeature(Window.FEATURE_NO_TITLE)
-
+        setContentView(R.layout.activity_call)
+        roleBadge = findViewById(R.id.local_role_badge)
         // Use modern alternatives for deprecated flags
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
@@ -156,7 +160,9 @@ class RoomActivity : AppCompatActivity(), RtcListener {
     }
 
     private fun init() {
-        peerConnectionClient = PeerConnectionClient(this, roomId, this, mSocketAddress, eglBase)
+        peerConnectionClient = PeerConnectionClient(
+            this, roomId, this, mSocketAddress, eglBase,
+        )
         peerConnectionClientRef = WeakReference(peerConnectionClient)
 
         if (PermissionChecker.hasPermissions(this, RequiredPermissions)) {
@@ -172,7 +178,7 @@ class RoomActivity : AppCompatActivity(), RtcListener {
         initialParams.height = (resources.displayMetrics.density * 160).toInt()
         initialParams.rightMargin = (resources.displayMetrics.density * 16).toInt()
         initialParams.topMargin = (resources.displayMetrics.density * 80).toInt()
-        initialParams.gravity = android.view.Gravity.TOP or android.view.Gravity.END
+        initialParams.gravity = Gravity.TOP or Gravity.END
         localViewContainer.layoutParams = initialParams
 
         setupDraggableView(localViewContainer)
@@ -219,7 +225,17 @@ class RoomActivity : AppCompatActivity(), RtcListener {
 
         val hangUp = findViewById<ImageButton>(R.id.hang_up)
         hangUp.setOnClickListener {
-            onBackPressedDispatcher.onBackPressed()
+            peerConnectionClient?.onDestroy()
+            peerConnectionClient = null
+
+            messageBottomSheet?.dismiss()
+
+            val intent = Intent(this, HomeActivity::class.java)
+
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+
+            startActivity(intent)
+            finish()
         }
 
         localView.addFrameListener({ bitmap ->
@@ -238,7 +254,7 @@ class RoomActivity : AppCompatActivity(), RtcListener {
             params.rightMargin = (resources.displayMetrics.density * 16).toInt()
             params.topMargin = (resources.displayMetrics.density * 80).toInt()
             // Position at top-right corner of the restricted area (below top bar)
-            params.gravity = android.view.Gravity.TOP or android.view.Gravity.END
+            params.gravity = Gravity.TOP or Gravity.END
 
             runOnUiThread {
                 localViewContainer.layoutParams = params
@@ -268,7 +284,7 @@ class RoomActivity : AppCompatActivity(), RtcListener {
             val remoteParams = remoteView.layoutParams as FrameLayout.LayoutParams
             remoteParams.width = FrameLayout.LayoutParams.MATCH_PARENT
             remoteParams.height = newRemoteHeight
-            remoteParams.gravity = android.view.Gravity.CENTER
+            remoteParams.gravity = Gravity.CENTER
 
             runOnUiThread {
                 remoteView.layoutParams = remoteParams
@@ -410,13 +426,13 @@ class RoomActivity : AppCompatActivity(), RtcListener {
 
             if (newStatus == "CONNECTED") {
                 roomIdText.text = "Room: $roomId (Bağlandı)"
-                roomIdText.setTextColor(android.graphics.Color.GREEN)
+                roomIdText.setTextColor(Color.GREEN)
             } else if (newStatus == "CONNECTING") {
                 roomIdText.text = "Room: $roomId (Bağlanıyor...)"
-                roomIdText.setTextColor(android.graphics.Color.YELLOW)
+                roomIdText.setTextColor(Color.YELLOW)
             } else {
                 roomIdText.text = "Room: $roomId ($newStatus)"
-                roomIdText.setTextColor(android.graphics.Color.RED)
+                roomIdText.setTextColor(Color.RED)
             }
         }
     }
@@ -458,7 +474,7 @@ class RoomActivity : AppCompatActivity(), RtcListener {
             params.height = (resources.displayMetrics.density * 160).toInt()
             params.rightMargin = (resources.displayMetrics.density * 16).toInt()
             params.topMargin = (resources.displayMetrics.density * 80).toInt()
-            params.gravity = android.view.Gravity.TOP or android.view.Gravity.END
+            params.gravity = Gravity.TOP or Gravity.END
 
             localViewContainer.layoutParams = params
         }
@@ -511,8 +527,24 @@ class RoomActivity : AppCompatActivity(), RtcListener {
     override fun onJoinRejected(reason: String) {
         runOnUiThread {
             Toast.makeText(this, "Odaya giriş talebiniz reddedildi.", Toast.LENGTH_LONG).show()
-            peerConnectionClient?.onDestroy()
+
+            val intent = Intent(this, HomeActivity::class.java)
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+
             finish()
+        }
+    }
+
+    override fun onRoleDataReceived(isHost: Boolean) {
+        runOnUiThread {
+            if (isHost) {
+                roleBadge.text = "HOST"
+                roleBadge.setBackgroundColor(Color.parseColor("#AAFF0000")) // Kırmızımsı
+            } else {
+                roleBadge.text = "GUEST"
+                roleBadge.setBackgroundColor(Color.parseColor("#AA0000FF")) // Mavimsi
+            }
         }
     }
 }

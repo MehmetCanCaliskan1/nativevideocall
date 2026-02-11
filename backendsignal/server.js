@@ -217,7 +217,7 @@ function handleDisconnect(socket) {
   }
 }
 
-const PORT = process.env.PORT || 5006;
+const PORT = process.env.PORT || 443;
 const ipAddress = ip.address(); //local ağ ip adresinin alınması kısmı
 
 server.listen(PORT, () => {
