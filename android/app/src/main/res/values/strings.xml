@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">VideoCALL</string>
-    <string name="serverAddress">http://10.246.234.31:443</string>
+    <string name="serverAddress">https://lithophytic-nonfilamentous-myrta.ngrok-free.dev</string>
     <string name="dataChannelName">MyApp Channel</string>
 </resources>

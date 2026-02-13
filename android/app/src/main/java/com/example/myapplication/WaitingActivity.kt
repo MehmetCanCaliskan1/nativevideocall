@@ -18,9 +18,6 @@ class WaitingActivity : AppCompatActivity() {
 
     }
 
-    /**
-     * Karşı taraf odaya girdiğinde çağrılacak
-     */
     fun onPeerJoined() {
         val intent = Intent(this, RoomActivity::class.java)
         intent.putExtra("ROOM_ID", roomId)

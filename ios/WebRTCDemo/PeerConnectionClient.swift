@@ -2,7 +2,6 @@ import Foundation
 import WebRTC
 import AVFoundation
 
-// Protokolü sadeleştirdik: Sadece bağlantı ve sinyal durumları kaldı.
 protocol WebRTCClientDelegate: AnyObject {
     func didGenerateCandidate(iceCandidate: RTCIceCandidate)
     func didIceConnectionStateChanged(iceConnectionState: RTCIceConnectionState)
@@ -155,52 +154,53 @@ class WebRTCClient: NSObject, RTCPeerConnectionDelegate, RTCVideoViewDelegate {
     }
     
     // MARK: - Private Setup Methods
-    // MARK: - Private Setup Methods
-        private func setupPeerConnection() -> RTCPeerConnection {
-            let rtcConf = RTCConfiguration()
-            
-            // 1. ICE Sunucuları (STUN ve TURN)
-            rtcConf.iceServers = [
-                RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302"]),
-                
-                
-                 RTCIceServer(
-                    urlStrings: ["turn:global.relay.metered.ca:80"],
-                    username: "cbed5ed13e67a0e746979a5b",
-                    credential: "Cy6b78fOFK5r8GZ5"
-                 )
-               
-            ]
-        
-            rtcConf.sdpSemantics = .unifiedPlan
-            
-            // 3. Ağ ve Taşıma Politikaları (Optimizasyon)
-          
-            rtcConf.bundlePolicy = .maxBundle
-            
-            rtcConf.rtcpMuxPolicy = .require
-            
-            rtcConf.iceTransportPolicy = .all
-            
-            // Medya Kısıtlamaları (Constraints)
-         
-            let mediaConstraints = RTCMediaConstraints(
-                mandatoryConstraints: nil,
-                optionalConstraints: ["DtlsSrtpKeyAgreement": "true"]
+    private func setupPeerConnection() -> RTCPeerConnection? {
+        let rtcConf = RTCConfiguration()
+        rtcConf.iceServers = [
+            RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302"]),
+            RTCIceServer(
+                urlStrings: ["turns:global.relay.metered.ca:443?transport=tcp"],
+                username: "cbed5ed13e67a0e746979a5b",
+                credential: "Cy6b78fOFK5r8GZ5"
+            ),
+            RTCIceServer(
+                urlStrings: ["turn:global.relay.metered.ca:80?transport=tcp"],
+                username: "cbed5ed13e67a0e746979a5b",
+                credential: "Cy6b78fOFK5r8GZ5"
+            ),
+            RTCIceServer(
+                urlStrings: ["turn:global.relay.metered.ca:80"],
+                username: "cbed5ed13e67a0e746979a5b",
+                credential: "Cy6b78fOFK5r8GZ5"
             )
-            
-            //Peer Connection Oluşturma
-           
-            guard let pc = self.peerConnectionFactory.peerConnection(
-                with: rtcConf,
-                constraints: mediaConstraints,
-                delegate: self
-            ) else {
-                fatalError("PeerConnection factory failed to create a connection")
-            }
-            
-            return pc
+        ]
+        
+        rtcConf.sdpSemantics = .unifiedPlan
+        rtcConf.bundlePolicy = .maxBundle
+        rtcConf.rtcpMuxPolicy = .require
+        rtcConf.tcpCandidatePolicy = .enabled
+        
+        // DÜZELTME 1: .relay yerine .all yapıyoruz ki yerel ağda da çalışsın
+        rtcConf.iceTransportPolicy = .all
+        
+        let mediaConstraints = RTCMediaConstraints(
+            mandatoryConstraints: nil,
+            optionalConstraints: ["DtlsSrtpKeyAgreement": "true"]
+        )
+        
+        // Factory'nin var olduğundan emin olalım
+        guard let pc = self.peerConnectionFactory.peerConnection(
+            with: rtcConf,
+            constraints: mediaConstraints,
+            delegate: self
+        ) else {
+            print("❌ HATA: PeerConnection oluşturulamadı. Konfigürasyonu kontrol et.")
+            // fatalError kullanma, uygulamanın çökmesini engellemek için nil dön
+            return nil
         }
+        
+        return pc
+    }
     private func setupView() {
         // Local View
         localRenderView = RTCMTLVideoView()
@@ -401,7 +401,7 @@ extension WebRTCClient {
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
     
-    // Data Channel (Removed logic but kept empty delegate methods if needed by protocol conformance internally)
+ 
     func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {
         print("Data channel opened but ignored (Chat feature removed)")
     }

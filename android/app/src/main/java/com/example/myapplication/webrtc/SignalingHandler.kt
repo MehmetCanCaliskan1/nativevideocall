@@ -151,7 +151,6 @@ class SignalingHandler(
     fun sendAnswer(sdp: SessionDescription) {
         if (remoteTargetId == null) return
 
-        // Backend yapısı: { to: "targetId", answer: { type: "answer", sdp: "..." } }
         val payload = JSONObject()
         val answerJson = JSONObject()
 

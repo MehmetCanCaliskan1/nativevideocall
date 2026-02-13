@@ -3,7 +3,7 @@ import SocketIO
 import WebRTC
 import AVFoundation
 
-let SERVER_URL = "http://10.246.76.192:443"
+let SERVER_URL = "https://lithophytic-nonfilamentous-myrta.ngrok-free.dev"
 
 class CallViewController: UIViewController, WebRTCClientDelegate {
     var targetSocketId: String?
@@ -40,14 +40,7 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
         waitingOverlay.addSubview(waitingLabel)
         view.addSubview(waitingOverlay)
     }
-    
-    
-    
-    
-    
-    
-    
-    
+
     
     var roomId: String = ""
     let manager = SocketManager(socketURL: URL(string: SERVER_URL)!, config: [.log(true), .compress])
@@ -248,7 +241,6 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
             
             print("Offer alındı, gönderen: \(fromId)")
             
-            // BURASI KRİTİK: Gelen ID'yi değişkene atıyoruz ki Answer doğru yere gitsin
             self?.targetSocketId = fromId
             
             let offerSDP = RTCSessionDescription(type: .offer, sdp: sdp)

@@ -262,7 +262,7 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- Message Overlay (Left Side) - Must be last to appear on top -->
+    <!-- Message Overlay (Left Side) Must be last to appear on top -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/messages_overlay"
         android:layout_width="wrap_content"

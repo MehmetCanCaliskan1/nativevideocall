@@ -27,10 +27,7 @@ io.on('connection',(socket)=>{
     console.log('New user connected: ',socket.id);
     socket.on('join-room',(roomId,userId)=>{
         const roomId */
-
-
-
-
+        
         const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -86,7 +83,7 @@ io.on("connection", (socket) => {
       socket.emit("waiting-approval");
       console.log(`${username} bekleme odasına alındı (Host onayı bekleniyor).`);
     } else {
-      // Eğer odada kimse kalmadıysa veya Host düşmüşse ama oda silinmemişse (Fail-safe)
+      // Eğer odada kimse kalmadıysa veya Host düşmüşse ama oda silinmemişse 
       // Gelen kişiyi odaya al ve Host yap
       const user = { socketId: socket.id, username, isHost: true }; 
       rooms[roomId].push(user);
@@ -95,9 +92,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("handle-join-request", ({ decision, requesterId, requesterName }) => {
-    // decision: 'approve' veya 'reject'
-    
+  socket.on("handle-join-request", ({ decision, requesterId, requesterName }) => {    
     // İşlemi yapan gerçekten o odanın Host'u mu
     const roomEntries = Object.entries(rooms).find(([id, users]) => 
       users.some(u => u.socketId === socket.id && u.isHost)
@@ -165,14 +160,13 @@ io.on("connection", (socket) => {
   });
 
   socket.on("webrtc-ice", ({ to, candidate }) => {
-    // ICE Candidate'ler çok sık gelir, loglamayı kapalı tutabilirsin.
     io.to(to).emit("webrtc-ice", {
       from: socket.id,
       candidate
     });
   });
 
-  // MANUEL AYRILMA (Mobilde "Kapat" butonu için)
+  // MANUEL AYRILMA 
   socket.on("leave-room", () => {
     handleDisconnect(socket);
   });
@@ -217,7 +211,7 @@ function handleDisconnect(socket) {
   }
 }
 
-const PORT = process.env.PORT || 443;
+const PORT = process.env.PORT || 5006;
 const ipAddress = ip.address(); //local ağ ip adresinin alınması kısmı
 
 server.listen(PORT, () => {

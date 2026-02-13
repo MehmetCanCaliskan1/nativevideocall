@@ -85,7 +85,7 @@ class WebRtcPeer(
     fun getSenders(): List<RtpSender> = peerConnection.senders
 
     fun dispose() {
-        // Önce close, sonra dispose sırası önemlidir
+        // Önce close sonra dispose
         try {
             peerConnection.close()
         } catch (e: Exception) {
@@ -126,10 +126,10 @@ class WebRtcPeer(
     override fun onSignalingChange(state: PeerConnection.SignalingState) {}
 
     override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
-        Log.d(TAG, "onIceConnectionChange: $state") // Logcat'ten bu çıktıyı takip edin
+        Log.d(TAG, "onIceConnectionChange: $state")
 
         when (state) {
-            // HEM CONNECTED HEM DE COMPLETED DURUMLARINI KONTROL ET
+            // HEM CONNECTED HEM DE COMPLETED DURUMLARINI KONTROL ETME KISMI
             PeerConnection.IceConnectionState.CONNECTED,
             PeerConnection.IceConnectionState.COMPLETED -> {
                 listener.onStatusChanged("CONNECTED")

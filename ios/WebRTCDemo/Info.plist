@@ -7,11 +7,20 @@
 	<key>RTCScreenSharingExtension</key>
 	<string>com.ducmai.WebRTCDemo.WebRTCDemoScreenBroadcast</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>mikrofon gerekli</string>
+	<string>Görüşme yapabilmek için mikrofona erişim gereklidir.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>kamera gerekli</string>
+	<string>Görüntülü görüşme için kameraya erişim gereklidir.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Need access to photo library to share videos</string>
+	<string>Video paylaşmak için galeriye erişim gereklidir.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_http._tcp</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
