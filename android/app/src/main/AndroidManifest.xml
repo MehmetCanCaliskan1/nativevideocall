@@ -42,17 +42,6 @@
                 android:name="android.support.PARENT_ACTIVITY"
                 android:value=".HomeActivity" />
         </activity>
-
-
-        <activity
-            android:name=".WaitingActivity"
-            android:parentActivityName=".HomeActivity"
-            android:exported="false">
-            <meta-data
-                android:name="android.support.PARENT_ACTIVITY"
-                android:value=".HomeActivity" />
-        </activity>
-
     </application>
 
 </manifest>

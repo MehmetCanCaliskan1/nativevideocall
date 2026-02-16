@@ -297,7 +297,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
-            android:text="Bağlantı İsteği Gönderildi"
+            android:text="Lütfen Bekleyin"
             android:textColor="@color/white"
             android:textSize="20sp"
             android:textStyle="bold" />
@@ -308,7 +308,7 @@
             android:layout_marginTop="8dp"
             android:gravity="center"
             android:paddingHorizontal="40dp"
-            android:text="Lütfen hostun sizi odaya kabul etmesini bekleyin..."
+            android:text="Yönlendiriliyorsunuz..."
             android:textColor="#BBBBBB"
             android:textSize="14sp" />
 
