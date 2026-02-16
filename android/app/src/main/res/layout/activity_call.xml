@@ -121,15 +121,17 @@
             android:id="@+id/local_role_badge"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="bottom|center_horizontal"
-            android:layout_marginBottom="8dp"
+            android:layout_gravity="top|start"
+            android:layout_marginTop="8dp"
+            android:layout_marginEnd="8dp"
             android:background="@drawable/badge_background"
             android:paddingHorizontal="8dp"
             android:paddingVertical="4dp"
             android:text="Loading..."
             android:textColor="#FFFFFF"
             android:textSize="12sp"
-            android:textStyle="bold" />
+            android:textStyle="bold"
+            />
 
         <ImageView
             android:id="@+id/local_mute_indicator"
@@ -273,4 +275,45 @@
         android:clipToPadding="false"
         android:requiresFadingEdge="vertical"
         android:fadingEdgeLength="60dp" />
+
+    <LinearLayout
+        android:id="@+id/waiting_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#99000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:visibility="gone"
+        android:elevation="20dp">
+
+        <ProgressBar
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:indeterminateTint="@color/white" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="Bağlantı İsteği Gönderildi"
+            android:textColor="@color/white"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
+            android:paddingHorizontal="40dp"
+            android:text="Lütfen hostun sizi odaya kabul etmesini bekleyin..."
+            android:textColor="#BBBBBB"
+            android:textSize="14sp" />
+
+    </LinearLayout>
+
+
+
 </FrameLayout>

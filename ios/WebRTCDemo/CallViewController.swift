@@ -734,6 +734,7 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
         ])
         
         localVideoContainer.layoutIfNeeded()
+        localVideoContainer.bringSubviewToFront(hostLabel)
         localVideoContainer.bringSubviewToFront(localMuteIndicator)
     }
     

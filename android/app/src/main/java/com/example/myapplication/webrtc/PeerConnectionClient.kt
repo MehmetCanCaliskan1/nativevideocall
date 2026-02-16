@@ -232,19 +232,7 @@ class PeerConnectionClient(
 
         throw RuntimeException("No camera found")
     }
-    fun restartIceConnection() {
-        Log.d(TAG, "Restarting ICE connection...")
 
-
-        peer?.dispose()
-        peer = null
-        createPeer()
-
-
-
-
-        Log.d(TAG, "Peer connection restarted, ready for new guest")
-    }
 
 }
 

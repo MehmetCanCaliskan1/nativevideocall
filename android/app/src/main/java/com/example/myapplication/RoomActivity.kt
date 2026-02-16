@@ -47,7 +47,7 @@ class RoomActivity : AppCompatActivity(), RtcListener {
         @JvmStatic
         var peerConnectionClientRef: WeakReference<PeerConnectionClient>? = null
     }
-
+    private lateinit var waitingOverlay: View
     private lateinit var mSocketAddress: String
     private lateinit var roleBadge: TextView
     private lateinit var roomId: String
@@ -71,6 +71,8 @@ class RoomActivity : AppCompatActivity(), RtcListener {
         super.onCreate(savedInstanceState)
         requestWindowFeature(Window.FEATURE_NO_TITLE)
         setContentView(R.layout.activity_call)
+        waitingOverlay = findViewById(R.id.waiting_overlay)
+        waitingOverlay.visibility = View.VISIBLE
         roleBadge = findViewById(R.id.local_role_badge)
         roleBadge.bringToFront()
         // Use modern alternatives for deprecated flags
@@ -99,7 +101,6 @@ class RoomActivity : AppCompatActivity(), RtcListener {
             }
         }
 
-        setContentView(R.layout.activity_call)
 
         mSocketAddress = getString(R.string.serverAddress)
 
@@ -180,12 +181,19 @@ class RoomActivity : AppCompatActivity(), RtcListener {
         // Switch camera
         val switchCamera = findViewById<ImageButton>(R.id.switch_camera)
         switchCamera.setOnClickListener {
-            // Flip animation on local view container
-            val flipAnimator = ObjectAnimator.ofFloat(localViewContainer, "rotationY", 0f, 180f)
+            // Bozulmayı önlemek için ters dönünce
+            val currentRotation = localViewContainer.rotationY
+            val targetRotation = currentRotation + 180f
+
+            val flipAnimator = ObjectAnimator.ofFloat(localViewContainer, "rotationY", currentRotation, targetRotation)
             flipAnimator.duration = 600
             flipAnimator.start()
 
-            // Switch camera at halfway point of animation
+            // Yazının ters dönmesini engellemek için yazıyı da aynı anda döndürme kısmı
+            val badgeFlipAnimator = ObjectAnimator.ofFloat(roleBadge, "rotationY", currentRotation, targetRotation)
+            badgeFlipAnimator.duration = 600
+            badgeFlipAnimator.start()
+
             localView.postDelayed({
                 peerConnectionClient?.switchCamera()
             }, 300)
@@ -435,10 +443,17 @@ class RoomActivity : AppCompatActivity(), RtcListener {
     override fun onAddLocalStream(localStream: MediaStream) {
         Log.d(TAG, "onAddLocalStream")
 
+        runOnUiThread {
+            if (roleBadge.text == "Loading") {
+                roleBadge.visibility = View.GONE
+            }
+        }
+
         val videoTrack = localStream.videoTracks[0]
         videoTrack.setEnabled(true)
-        localStream.videoTracks[0].addSink(localView)
+        videoTrack.addSink(localView)
     }
+
 
     override fun onRemoveLocalStream(localStream: MediaStream) {
         Log.d(TAG, "onRemoveLocalStream")
@@ -452,6 +467,7 @@ class RoomActivity : AppCompatActivity(), RtcListener {
 
         runOnUiThread {
             // Remote view'i tekrar görünür yap
+            waitingOverlay.visibility = View.GONE
             remoteView.visibility = View.VISIBLE
         }
 
@@ -472,29 +488,13 @@ class RoomActivity : AppCompatActivity(), RtcListener {
                 // --- HOST MANTIĞI (Odada Kalır) ---
 
                 Toast.makeText(this, "Misafir odadan ayrıldı. Yeni bağlantı bekleniyor...", Toast.LENGTH_LONG).show()
-
-                // Host yalnız kaldı, kendi görüntüsünü (LocalView) tekrar tam ekran/büyük yapalım
-                val localViewContainer = findViewById<FrameLayout>(R.id.local_view_container)
-                val params = localViewContainer.layoutParams as FrameLayout.LayoutParams
-
-                params.width = FrameLayout.LayoutParams.MATCH_PARENT
-                params.height = FrameLayout.LayoutParams.MATCH_PARENT
-                params.setMargins(0, 0, 0, 0)
-                params.gravity = Gravity.CENTER
-
-                localViewContainer.layoutParams = params
-                localViewContainer.visibility = View.VISIBLE
-                localViewContainer.rotationY = 0f // Eğer kamera çevrilmişse düzelt
-
-                // Durum yazısını güncelle
+                // Durum yazısı
                 val roomIdText = findViewById<TextView>(R.id.room_id)
-                roomIdText.text = "Room: $roomId (Bağlantı Bekleniyor...)"
-                roomIdText.setTextColor(Color.YELLOW)
-
-                peerConnectionClient?.restartIceConnection()
+                roomIdText.text = "Room: $roomId"
+                roomIdText.setTextColor(Color.WHITE)
 
             } else {
-                // --- GUEST MANTIĞI (Odadan Atılır/Çıkar) ---
+                // GUEST MANTIĞI Odadan Atılır/Çıkar
 
                 AlertDialog.Builder(this)
                     .setTitle("Görüşme Sonlandı")
@@ -566,13 +566,16 @@ class RoomActivity : AppCompatActivity(), RtcListener {
     override fun onRoleDataReceived(isHost: Boolean) {
         this.isCurrentUserHost = isHost
         runOnUiThread {
+            roleBadge.visibility = View.VISIBLE
+            roleBadge.text = if (isHost) "HOST" else "GUEST"
+            roleBadge.setBackgroundColor(
+                if (isHost) Color.parseColor("#FF9800") else Color.parseColor("#2196F3")
+            )
+            // Eğer misafir ise onay beklediği için overlay'i aç
             if (isHost) {
-                roleBadge.text = "HOST"
-                roleBadge.setBackgroundColor(Color.parseColor("#AAFF0000"))
-            } else {
-                roleBadge.text = "GUEST"
-                roleBadge.setBackgroundColor(Color.parseColor("#AA0000FF"))
+                waitingOverlay.visibility = View.GONE
             }
         }
     }
+
 }

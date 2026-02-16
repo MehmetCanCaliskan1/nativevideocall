@@ -82,7 +82,7 @@ class ViewController: UIViewController {
         joinButton.setTitle("Odaya Katıl", for: .normal)
         joinButton.titleLabel?.font = UIFont.systemFont(ofSize: 20, weight: .bold)
         joinButton.setTitleColor(.white, for: .normal)
-        joinButton.backgroundColor = UIColor(red: 0.20, green: 0.45, blue: 1.00, alpha: 1.0)
+        joinButton.backgroundColor = UIColor(red: 1.00, green: 0.58, blue: 0.00, alpha: 1.0)
         joinButton.layer.cornerRadius = 18
         joinButton.layer.shadowColor = UIColor(red: 0.20, green: 0.45, blue: 1.00, alpha: 0.3).cgColor
         joinButton.layer.shadowOffset = CGSize(width: 0, height: 4)

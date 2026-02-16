@@ -146,6 +146,7 @@ class WebRtcPeer(
                 listener.onStatusChanged("FAILED")
                 listener.onRemoveRemoteStream()
                 listener.onPeersConnectionStatusChange(false)
+
                 dispose() // Bağlantı koptuysa temizle
             }
 
