@@ -100,6 +100,12 @@
                 android:scaleType="centerInside"
                 android:src="@drawable/arrow_triangle_2_circlepath_camera_fill"
                 app:tint="@color/white" />
+            <ImageButton
+                android:id="@+id/btn_flash"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:src="@drawable/flash" android:background="?attr/selectableItemBackgroundBorderless"
+                android:padding="16dp" />
         </LinearLayout>
     </LinearLayout>
 

@@ -16,6 +16,7 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
         
     }
     //bekleme
+    private var isBackCameraActive: Bool = false
     private let waitingOverlay = UIView()
     private let waitingLabel = UILabel()
     private let waitingSpinner = UIActivityIndicatorView(style: .large)
@@ -57,6 +58,9 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
     private let remoteVideoContainer = UIView()
     private let gradientOverlayTop = UIView()
     private let gradientOverlayBottom = UIView()
+    
+    private let flashButton = UIButton(type: .system)
+    private var isFlashOn = false
     
     // Top Bar
     private let topBar = UIView()
@@ -393,6 +397,13 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
         topBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(topBar)
         
+        let flashButtonConfig = UIImage.SymbolConfiguration(pointSize: 18, weight: .regular)
+            flashButton.setImage(UIImage(systemName: "bolt.slash.fill", withConfiguration: flashButtonConfig), for: .normal)
+            flashButton.tintColor = .white
+            flashButton.backgroundColor = .clear
+            flashButton.addTarget(self, action: #selector(flashButtonTapped), for: .touchUpInside)
+            flashButton.translatesAutoresizingMaskIntoConstraints = false
+        
         spacerView.translatesAutoresizingMaskIntoConstraints = false
         
         // Room ID label
@@ -452,13 +463,13 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
         topBarStack.translatesAutoresizingMaskIntoConstraints = false
         topBar.addSubview(topBarStack)
         
-        topBarStack.addArrangedSubview(spacerView)
+        topBarStack.addArrangedSubview(flashButton)
         topBarStack.addArrangedSubview(centerInfoStack)
         topBarStack.addArrangedSubview(switchCameraButton)
         
         NSLayoutConstraint.activate([
-            spacerView.widthAnchor.constraint(equalToConstant: 40),
-            spacerView.heightAnchor.constraint(equalToConstant: 40)
+            flashButton.widthAnchor.constraint(equalToConstant: 40),
+            flashButton.heightAnchor.constraint(equalToConstant: 40)
         ])
     }
     
@@ -678,7 +689,7 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
                 bottomControlsContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
                 bottomControlsContainer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
                 
-                // Glass panel (ARTIK SECONDARY STACK YOK, DOĞRUDAN CONTAINER'A BAĞLI)
+                // Glass panel
                 glassPanelView.topAnchor.constraint(equalTo: bottomControlsContainer.topAnchor),
                 glassPanelView.centerXAnchor.constraint(equalTo: bottomControlsContainer.centerXAnchor),
                 glassPanelView.bottomAnchor.constraint(equalTo: bottomControlsContainer.bottomAnchor),
@@ -739,10 +750,68 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
     }
     
     // MARK: - Actions
+    
+    @objc private func flashButtonTapped() {
+        //Eğer aktif olan kamera arka kamera değilse işlem yapma
+        guard isBackCameraActive else {
+            showToast(message: "Flaş sadece arka kamerada kullanılabilir.", duration: 2.0)
+            return
+        }
+        
+        setFlash(on: !isFlashOn)
+    }
+
+    private func setFlash(on: Bool) {
+
+        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back), device.hasTorch else {
+            showToast(message: "Bu kamerada flaş desteklenmiyor.", duration: 2.0)
+            return
+        }
+        
+        do {
+            try device.lockForConfiguration()
+            
+            if on {
+                try device.setTorchModeOn(level: 1.0)
+            } else {
+                device.torchMode = .off
+            }
+            
+            device.unlockForConfiguration()
+            isFlashOn = on
+            
+            // UI Güncellemesi
+            let iconName = isFlashOn ? "bolt.fill" : "bolt.slash.fill"
+            let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .regular)
+            flashButton.setImage(UIImage(systemName: iconName, withConfiguration: config), for: .normal)
+            flashButton.tintColor = isFlashOn ? .systemYellow : .white
+            
+        } catch {
+            print("Flaş durumu değiştirilemedi: \(error.localizedDescription)")
+        }
+    }
+
     @objc private func switchCameraTapped() {
         webRTCClient?.switchCamera()
+        
+        // Kamera yönü durumunu tersine çevir
+        isBackCameraActive.toggle()
+        
+        // Eğer flaş açıksa ve kamera değiştiyse flaşı kapat
+        if isFlashOn {
+            if let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back), device.hasTorch {
+                try? device.lockForConfiguration()
+                device.torchMode = .off
+                device.unlockForConfiguration()
+            }
+            
+            isFlashOn = false
+            
+            let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .regular)
+            flashButton.setImage(UIImage(systemName: "bolt.slash.fill", withConfiguration: config), for: .normal)
+            flashButton.tintColor = .white
+        }
     }
-    
     @objc private func muteButtonTapped() {
         webRTCClient?.toggleAudio(enable: !audioEnabled)
         audioEnabled.toggle()
@@ -842,7 +911,7 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
             "sdp": sessionDescription.sdp
         ]
         
-        // 2. BURASI KRİTİK: "to" karşısına tırnaksız targetId yazılmalı
+        //  targetId
         let payload: [String: Any] = [
             "to": targetId,
             type: sdpPayload

@@ -33,6 +33,7 @@ import java.lang.ref.WeakReference
 import androidx.appcompat.app.AlertDialog
 class RoomActivity : AppCompatActivity(), RtcListener {
     private var isCurrentUserHost = false
+    private var isFlashOn = false
     companion object {
         private val TAG = RoomActivity::class.java.canonicalName
         private val RequiredPermissions = arrayOf(
@@ -163,7 +164,23 @@ class RoomActivity : AppCompatActivity(), RtcListener {
         if (PermissionChecker.hasPermissions(this, RequiredPermissions)) {
             peerConnectionClient?.start()
         }
+        val btnFlash = findViewById<ImageButton>(R.id.btn_flash)
+        btnFlash.setOnClickListener {
+            isFlashOn = !isFlashOn
 
+            // Flaş durumunu WebRTC istemcisine gönderiyoruz
+            val success = peerConnectionClient?.toggleFlash(isFlashOn) ?: false
+
+            if (success) {
+                btnFlash.setImageResource(
+                    if (isFlashOn) R.drawable.flash else R.drawable.flash_off
+                )
+            } else {
+                // Flaş açılamazsa durumu geri al
+                isFlashOn = false
+                Toast.makeText(this, "Flaş açılamadı. Arka kamerada olduğunuzdan emin olun.", Toast.LENGTH_SHORT).show()
+            }
+        }
         // Setup draggable local view
         val localViewContainer = findViewById<FrameLayout>(R.id.local_view_container)
 
@@ -194,6 +211,11 @@ class RoomActivity : AppCompatActivity(), RtcListener {
             badgeFlipAnimator.duration = 600
             badgeFlipAnimator.start()
 
+            if (isFlashOn) {
+                isFlashOn = false
+                btnFlash.setImageResource(R.drawable.flash_off)
+                peerConnectionClient?.toggleFlash(false)
+            }
             localView.postDelayed({
                 peerConnectionClient?.switchCamera()
             }, 300)
