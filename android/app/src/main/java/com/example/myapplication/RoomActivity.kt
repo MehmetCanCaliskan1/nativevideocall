@@ -166,6 +166,13 @@ class RoomActivity : AppCompatActivity(), RtcListener {
         }
         val btnFlash = findViewById<ImageButton>(R.id.btn_flash)
         btnFlash.setOnClickListener {
+            val isFront = peerConnectionClient?.useFrontCamera ?: true
+            
+            if (isFront) {
+                Toast.makeText(this, "Ön kamerada flaş kullanılamaz.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
             isFlashOn = !isFlashOn
 
             // Flaş durumunu WebRTC istemcisine gönderiyoruz

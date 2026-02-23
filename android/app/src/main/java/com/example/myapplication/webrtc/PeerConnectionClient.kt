@@ -41,14 +41,8 @@ class PeerConnectionClient(
             return false
         }
 
-        // We still check useFrontCamera but we'll try to sync it better in switchCamera
-        if (useFrontCamera) {
-            Log.w(TAG, "Flash failed: useFrontCamera is true")
-            return false
-        }
-
         try {
-            // 1. Find "currentSession" field in the hierarchy
+            // Find "currentSession" field in the hierarchy
             var currentClass: Class<*>? = videoCapturer!!.javaClass
             var sessionField: java.lang.reflect.Field? = null
 
@@ -73,7 +67,7 @@ class PeerConnectionClient(
             val fields = sessionClass.declaredFields
             fields.forEach { it.isAccessible = true }
 
-            // 2. Handle Camera1 or Camera2 sessions
+            // Handle Camera1 or Camera2 sessions
             if (sessionClass.name.contains("Camera1Session")) {
                 val cameraField = fields.find { it.type.name.contains("android.hardware.Camera") }
                 if (cameraField != null) {
@@ -84,24 +78,79 @@ class PeerConnectionClient(
                         params.flashMode = if (isEnable) android.hardware.Camera.Parameters.FLASH_MODE_TORCH else android.hardware.Camera.Parameters.FLASH_MODE_OFF
                         camera.parameters = params
                         return true
+                    } else {
+                        Log.w(TAG, "Flash mode TORCH not supported on this camera")
                     }
                 }
             } else if (sessionClass.name.contains("Camera2Session")) {
+                val sessionField = fields.find { it.type == android.hardware.camera2.CameraCaptureSession::class.java }
+                if (sessionField == null) {
+                    Log.e(TAG, "Camera2Session: captureSession field not found")
+                    return false
+                }
+                
+                val captureSession = sessionField.get(currentSession) as android.hardware.camera2.CameraCaptureSession
+                var builder: android.hardware.camera2.CaptureRequest.Builder? = null
+                var callback: android.hardware.camera2.CameraCaptureSession.CaptureCallback? = null
+
+                // 1. Try to get existing builder field
                 val builderField = fields.find { it.type == android.hardware.camera2.CaptureRequest.Builder::class.java }
-                val sessionField2 = fields.find { it.type == android.hardware.camera2.CameraCaptureSession::class.java }
-                val callbackField = fields.find { it.type.name.contains("CaptureCallback") }
+                    ?: fields.find { it.name == "captureRequestBuilder" || it.name == "captureRequest" || it.name == "builder" }
+                
+                if (builderField != null) {
+                    builder = builderField.get(currentSession) as? android.hardware.camera2.CaptureRequest.Builder
+                    val callbackField = fields.find { it.type.name.contains("CaptureCallback") }
+                    callback = callbackField?.get(currentSession) as? android.hardware.camera2.CameraCaptureSession.CaptureCallback
+                }
 
-                if (builderField != null && sessionField2 != null) {
-                    val builder = builderField.get(currentSession) as android.hardware.camera2.CaptureRequest.Builder
-                    val captureSession = sessionField2.get(currentSession) as android.hardware.camera2.CameraCaptureSession
-                    val callback = callbackField?.get(currentSession) as? android.hardware.camera2.CameraCaptureSession.CaptureCallback
+                // 2. Fallback: Create a new builder if it's not stored as a field (common in some WebRTC versions)
+                if (builder == null) {
+                    val cameraDeviceField = fields.find { it.type == android.hardware.camera2.CameraDevice::class.java }
+                    val surfaceField = fields.find { it.type == android.view.Surface::class.java }
+                    
+                    if (cameraDeviceField != null && surfaceField != null) {
+                        val cameraDevice = cameraDeviceField.get(currentSession) as android.hardware.camera2.CameraDevice
+                        val surface = surfaceField.get(currentSession) as android.view.Surface
+                        builder = cameraDevice.createCaptureRequest(android.hardware.camera2.CameraDevice.TEMPLATE_RECORD)
+                        builder.addTarget(surface)
+                        
+                        // Try to restore original FPS settings from captureFormat to avoid framerate drops
+                        try {
+                            val formatField = fields.find { it.name == "captureFormat" }
+                            val fpsUnitFactorField = fields.find { it.name == "fpsUnitFactor" }
+                            if (formatField != null && fpsUnitFactorField != null) {
+                                val format = formatField.get(currentSession)
+                                val fpsUnitFactor = fpsUnitFactorField.get(currentSession) as Int
+                                val framerate = format!!.javaClass.getDeclaredField("framerate").let { 
+                                    it.isAccessible = true
+                                    it.get(format) 
+                                }
+                                val minFps = framerate!!.javaClass.getDeclaredField("min").let {
+                                    it.isAccessible = true
+                                    it.get(framerate)
+                                } as Int
+                                val maxFps = framerate.javaClass.getDeclaredField("max").let {
+                                    it.isAccessible = true
+                                    it.get(framerate)
+                                } as Int
+                                builder.set(android.hardware.camera2.CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, 
+                                    android.util.Range(minFps / fpsUnitFactor, maxFps / fpsUnitFactor))
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to restore FPS settings: ${e.message}")
+                        }
+                    }
+                }
 
+                if (builder != null) {
                     builder.set(android.hardware.camera2.CaptureRequest.FLASH_MODE,
                         if (isEnable) android.hardware.camera2.CameraMetadata.FLASH_MODE_TORCH
                         else android.hardware.camera2.CameraMetadata.FLASH_MODE_OFF)
 
                     captureSession.setRepeatingRequest(builder.build(), callback, null)
                     return true
+                } else {
+                    Log.e(TAG, "Could not find or create a CaptureRequest.Builder")
                 }
             }
         } catch (e: Exception) {
@@ -126,7 +175,8 @@ class PeerConnectionClient(
     private lateinit var signalingHandler: SignalingHandler
     private var peer: WebRtcPeer? = null
 
-    private var useFrontCamera = true
+    var useFrontCamera = true
+        private set
 
     init {
         initWebRtc()
