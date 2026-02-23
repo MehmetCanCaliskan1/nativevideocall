@@ -10,6 +10,9 @@ import org.json.JSONObject
 import org.json.JSONException
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraMetadata
 import android.os.Build
 class PeerConnectionClient(
     private val context: Context,
@@ -30,43 +33,83 @@ class PeerConnectionClient(
         socket.emit("handle-join-request", decisionData)
     }
     fun toggleFlash(isEnable: Boolean): Boolean {
-        // WebRTC'nin kendi CameraVideoCapturer nesnesini kullanarak flaşı kontrol ediyoruz
-        val cameraVideoCapturer = videoCapturer as? CameraVideoCapturer
+        Log.d(TAG, "toggleFlash triggered. Requested: $isEnable")
 
-        if (cameraVideoCapturer != null) {
-            // Eğer ön kameradaysak WebRTC flaşı desteklemez, false dön
-            if (useFrontCamera) {
-                Log.w(TAG, "Ön kamerada flaş açılamaz.")
+        val cameraVideoCapturer = videoCapturer as? CameraVideoCapturer
+        if (cameraVideoCapturer == null) {
+            Log.e(TAG, "Error: videoCapturer is null or not a CameraVideoCapturer")
+            return false
+        }
+
+        // We still check useFrontCamera but we'll try to sync it better in switchCamera
+        if (useFrontCamera) {
+            Log.w(TAG, "Flash failed: useFrontCamera is true")
+            return false
+        }
+
+        try {
+            // 1. Find "currentSession" field in the hierarchy
+            var currentClass: Class<*>? = videoCapturer!!.javaClass
+            var sessionField: java.lang.reflect.Field? = null
+
+            while (currentClass != null) {
+                try {
+                    sessionField = currentClass.getDeclaredField("currentSession")
+                    break
+                } catch (e: NoSuchFieldException) {
+                    currentClass = currentClass.superclass
+                }
+            }
+
+            if (sessionField == null) {
+                Log.e(TAG, "Error: 'currentSession' field not found in capturer")
                 return false
             }
 
-            try {
-                // Sadece Android 6.0 ve üzeri cihazlar (ve Camera2 API) destekler
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            sessionField.isAccessible = true
+            val currentSession = sessionField.get(videoCapturer) ?: return false
 
-                    for (cameraId in cameraManager.cameraIdList) {
-                        val characteristics = cameraManager.getCameraCharacteristics(cameraId)
-                        val hasFlash = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
-                        val isBackCamera = characteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
+            val sessionClass = currentSession.javaClass
+            val fields = sessionClass.declaredFields
+            fields.forEach { it.isAccessible = true }
 
-                        if (isBackCamera && hasFlash) {
-                            // WebRTC'ye müdahale etmeden CameraManager ile deniyoruz.
-                            // Eğer WebRTC kamerayı kilitlediyse catch bloğuna düşer
-                            cameraManager.setTorchMode(cameraId, isEnable)
-                            return true
-                        }
+            // 2. Handle Camera1 or Camera2 sessions
+            if (sessionClass.name.contains("Camera1Session")) {
+                val cameraField = fields.find { it.type.name.contains("android.hardware.Camera") }
+                if (cameraField != null) {
+                    val camera = cameraField.get(currentSession) as android.hardware.Camera
+                    val params = camera.parameters
+                    val supportedFlashModes = params.supportedFlashModes
+                    if (supportedFlashModes != null && supportedFlashModes.contains(android.hardware.Camera.Parameters.FLASH_MODE_TORCH)) {
+                        params.flashMode = if (isEnable) android.hardware.Camera.Parameters.FLASH_MODE_TORCH else android.hardware.Camera.Parameters.FLASH_MODE_OFF
+                        camera.parameters = params
+                        return true
                     }
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "CameraManager ile flaş açılamadı. Kamera WebRTC tarafından kilitlenmiş olabilir.", e)
-                // Fallback: Eski tarz WebRTC Camera1 kontrolü (Eğer cihaz Camera2'de patlarsa)
-                // Not: Çoğu modern libwebrtc sürümünde bu durum Camera2Enumerator ile sorunsuz çalışır.
-                return false
+            } else if (sessionClass.name.contains("Camera2Session")) {
+                val builderField = fields.find { it.type == android.hardware.camera2.CaptureRequest.Builder::class.java }
+                val sessionField2 = fields.find { it.type == android.hardware.camera2.CameraCaptureSession::class.java }
+                val callbackField = fields.find { it.type.name.contains("CaptureCallback") }
+
+                if (builderField != null && sessionField2 != null) {
+                    val builder = builderField.get(currentSession) as android.hardware.camera2.CaptureRequest.Builder
+                    val captureSession = sessionField2.get(currentSession) as android.hardware.camera2.CameraCaptureSession
+                    val callback = callbackField?.get(currentSession) as? android.hardware.camera2.CameraCaptureSession.CaptureCallback
+
+                    builder.set(android.hardware.camera2.CaptureRequest.FLASH_MODE,
+                        if (isEnable) android.hardware.camera2.CameraMetadata.FLASH_MODE_TORCH
+                        else android.hardware.camera2.CameraMetadata.FLASH_MODE_OFF)
+
+                    captureSession.setRepeatingRequest(builder.build(), callback, null)
+                    return true
+                }
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "toggleFlash reflection error", e)
         }
+
         return false
-    }    companion object {
+    }  companion object {
         private const val TAG = "PeerConnectionClient"
     }
 
@@ -183,8 +226,16 @@ class PeerConnectionClient(
     }
 
     fun switchCamera() {
-        (videoCapturer as? CameraVideoCapturer)?.switchCamera(null)
-        useFrontCamera = !useFrontCamera
+        (videoCapturer as? CameraVideoCapturer)?.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
+            override fun onCameraSwitchDone(isFront: Boolean) {
+                useFrontCamera = isFront
+                Log.d(TAG, "Camera switch done. isFront: $isFront")
+            }
+
+            override fun onCameraSwitchError(error: String?) {
+                Log.e(TAG, "Camera switch error: $error")
+            }
+        })
     }
 
     fun toggleAudio(enable: Boolean) {

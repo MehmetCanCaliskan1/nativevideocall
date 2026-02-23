@@ -62,7 +62,7 @@ class HomeActivity : AppCompatActivity() {
             }
         })
 
-        btnJoin.setOnClickListener {
+        btnJoin.setOnClickListener {4
             if (roomId.isBlank()) {
                 roomIDText.error = "Room ID boş olamaz"
                 return@setOnClickListener
