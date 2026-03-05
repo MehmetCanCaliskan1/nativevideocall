@@ -27,15 +27,16 @@ io.on('connection',(socket)=>{
     console.log('New user connected: ',socket.id);
     socket.on('join-room',(roomId,userId)=>{
         const roomId */
-        
-        const express = require("express");
+
+const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
-const ip = require("ip"); 
+const ip = require("ip");
 
 const app = express();
 app.use(cors());
+app.use(express.static("public"));
 
 const rooms = {};
 
@@ -43,93 +44,102 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "*", 
+    origin: "*",
     methods: ["GET", "POST"],
   },
   pingTimeout: 60000,
   pingInterval: 25000
 });
 
+function broadcastDashboard() {
+  io.emit("dashboard-update", { rooms });
+}
+
 io.on("connection", (socket) => {
   console.log("Yeni bağlantı (Socket ID):", socket.id);
+
+  socket.on("get-dashboard-data", () => {
+    socket.emit("dashboard-update", { rooms });
+  });
 
   socket.on("join-room", ({ roomId, username }) => {
     // 1. Oda hiç yoksa oluştur 
     if (!rooms[roomId] || rooms[roomId].length === 0) {
       rooms[roomId] = [];
-      
+
       const user = { socketId: socket.id, username, isHost: true };
       rooms[roomId].push(user);
-      
+
       socket.join(roomId);
-      
+
       // Kullanıcıya Host olduğunu bildir
       socket.emit("room-joined", { status: "approved", isHost: true, users: rooms[roomId] });
       console.log(`Oda oluşturuldu: ${roomId}, Host: ${username}`);
+      broadcastDashboard();
       return;
     }
 
     // 2. Oda var, içeride Host var mı kontrol et.
     const hostUser = rooms[roomId].find(user => user.isHost);
-    
+
     if (hostUser) {
       // Host'a bildirim gönder: "Bu kişi girmek istiyor"
-      io.to(hostUser.socketId).emit("join-request", { 
-        socketId: socket.id, 
-        username 
+      io.to(hostUser.socketId).emit("join-request", {
+        socketId: socket.id,
+        username
       });
-      
+
       // Misafire bildirim gönderme kısmı
       socket.emit("waiting-approval");
       console.log(`${username} bekleme odasına alındı (Host onayı bekleniyor).`);
     } else {
       // Eğer odada kimse kalmadıysa veya Host düşmüşse ama oda silinmemişse 
       // Gelen kişiyi odaya al ve Host yap
-      const user = { socketId: socket.id, username, isHost: true }; 
+      const user = { socketId: socket.id, username, isHost: true };
       rooms[roomId].push(user);
       socket.join(roomId);
       socket.emit("room-joined", { status: "approved", isHost: true, users: rooms[roomId] });
     }
   });
 
-  socket.on("handle-join-request", ({ decision, requesterId, requesterName }) => {    
+  socket.on("handle-join-request", ({ decision, requesterId, requesterName }) => {
     // İşlemi yapan gerçekten o odanın Host'u mu
-    const roomEntries = Object.entries(rooms).find(([id, users]) => 
+    const roomEntries = Object.entries(rooms).find(([id, users]) =>
       users.some(u => u.socketId === socket.id && u.isHost)
     );
 
     if (!roomEntries) {
       console.log("Yetkisiz işlem denemesi veya oda bulunamadı.");
-      return; 
+      return;
     }
-    
+
     const [roomId, users] = roomEntries;
 
     if (decision === "approve") {
       // 1. Kullanıcıyı listeye ekle
-      rooms[roomId].push({ 
-        socketId: requesterId, 
-        username: requesterName, 
-        isHost: false 
+      rooms[roomId].push({
+        socketId: requesterId,
+        username: requesterName,
+        isHost: false
       });
 
       // 2. Bekleyen soketi odaya dahil et
       const requesterSocket = io.sockets.sockets.get(requesterId);
       if (requesterSocket) {
         requesterSocket.join(roomId);
-        
+
         // 3. Bekleyen kişiye "Girebilirsin" de
-        requesterSocket.emit("room-joined", { 
-          status: "approved", 
-          isHost: false, 
-          users: rooms[roomId] 
+        requesterSocket.emit("room-joined", {
+          status: "approved",
+          isHost: false,
+          users: rooms[roomId]
         });
       }
 
       // 4. Odadaki herkese güncel listeyi at
       io.to(roomId).emit("room-users", rooms[roomId]);
       console.log(`${requesterName} odaya kabul edildi.`);
-
+      broadcastDashboard();
     } else {
       // REDDEDİLME DURUMU
       const requesterSocket = io.sockets.sockets.get(requesterId);
@@ -141,7 +151,7 @@ io.on("connection", (socket) => {
   });
 
   // WEBRTC SIGNALING 
-  
+
   socket.on("webrtc-offer", ({ to, offer }) => {
     // 'to': Karşı tarafın socketId'si
     console.log(`Offer gönderiliyor: ${socket.id} -> ${to}`);
@@ -182,15 +192,15 @@ function handleDisconnect(socket) {
 
   for (const roomId in rooms) {
     const userIndex = rooms[roomId].findIndex(user => user.socketId === socket.id);
-    
+
     if (userIndex !== -1) {
       const leaver = rooms[roomId][userIndex];
       console.log(`${leaver.username} (${socket.id}) ayrıldı.`);
 
       // Odada kalan diğer kişiye haber veriyoruz.
-      socket.to(roomId).emit("user-disconnected", { 
+      socket.to(roomId).emit("user-disconnected", {
         socketId: socket.id,
-        username: leaver.username 
+        username: leaver.username
       });
       // Kullanıcıyı listeden sil
       rooms[roomId].splice(userIndex, 1);
@@ -201,7 +211,7 @@ function handleDisconnect(socket) {
         // Kalanlara güncel listeyi gönder
         io.to(roomId).emit("room-users", rooms[roomId]);
       }
-      break; 
+      break;
     }
   }
 
@@ -209,6 +219,7 @@ function handleDisconnect(socket) {
     delete rooms[roomIdToDelete];
     console.log(`Oda ${roomIdToDelete} boş olduğu için silindi.`);
   }
+  broadcastDashboard();
 }
 
 const PORT = process.env.PORT || 5006;

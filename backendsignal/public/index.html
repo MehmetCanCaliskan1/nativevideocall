@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signal Server Dashboard</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --accent-primary: #38bdf8;
+            --accent-secondary: #818cf8;
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --success: #10b981;
+            --warning: #f59e0b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2.5rem;
+            animation: fadeInDown 0.8s ease-out;
+        }
+
+        .logo-section h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo-section p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .status-badge {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .pulse {
+            width: 8px;
+            height: 8px;
+            background-color: var(--success);
+            border-radius: 50%;
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            animation: pulse 2s infinite;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+            animation: fadeInUp 0.8s ease-out 0.2s both;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            padding: 1.5rem;
+            border-radius: 1.25rem;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+
+        .stat-card .label {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-card .value {
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+
+        .rooms-section {
+            animation: fadeInUp 0.8s ease-out 0.4s both;
+        }
+
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .rooms-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .room-card {
+            background: var(--card-bg);
+            border-radius: 1.25rem;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .room-header {
+            padding: 1.25rem;
+            background: rgba(255, 255, 255, 0.03);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .room-id {
+            font-weight: 600;
+            color: var(--accent-primary);
+        }
+
+        .user-count {
+            font-size: 0.8rem;
+            background: rgba(56, 189, 248, 0.1);
+            color: var(--accent-primary);
+            padding: 0.25rem 0.75rem;
+            border-radius: 6px;
+        }
+
+        .room-body {
+            padding: 1.25rem;
+        }
+
+        .user-list {
+            list-style: none;
+        }
+
+        .user-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+        }
+
+        .user-item:last-child {
+            border-bottom: none;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            font-weight: 700;
+        }
+
+        .username {
+            font-size: 0.95rem;
+            font-weight: 500;
+        }
+
+        .host-badge {
+            font-size: 0.65rem;
+            background: var(--warning);
+            color: #000;
+            padding: 0.1rem 0.4rem;
+            border-radius: 4px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .socket-id {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-family: monospace;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 4rem;
+            color: var(--text-muted);
+            background: var(--card-bg);
+            border-radius: 1.25rem;
+            border: 2px dashed rgba(255, 255, 255, 0.05);
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            }
+
+            70% {
+                transform: scale(1);
+                box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+            }
+
+            100% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+            }
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Responsive Improvements */
+        @media (max-width: 768px) {
+            body {
+                padding: 1rem;
+            }
+
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 1rem;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <div class="logo-section">
+                <h1>Signal Dashboard</h1>
+                <p>WebRTC Monitoring System</p>
+            </div>
+            <div class="status-badge">
+                <div class="pulse"></div>
+                Server Live
+            </div>
+        </header>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="label">Oda Sayısı</div>
+                <div class="value" id="room-count">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Toplam Kullanıcı</div>
+                <div class="value" id="user-count">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Uptime</div>
+                <div class="value" id="uptime">0m</div>
+            </div>
+        </div>
+
+        <div class="rooms-section">
+            <h2 class="section-title">Aktif Odalar</h2>
+            <div id="rooms-container" class="rooms-grid">
+                <div class="empty-state">Henüz aktif bir oda bulunmuyor.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        const startTime = Date.now();
+
+        function updateUptime() {
+            const diff = Math.floor((Date.now() - startTime) / 60000);
+            document.getElementById('uptime').innerText = diff + 'm';
+        }
+
+        setInterval(updateUptime, 60000);
+
+        socket.on('dashboard-update', (data) => {
+            console.log('Update received:', data);
+            renderDashboard(data.rooms);
+        });
+
+        function renderDashboard(rooms) {
+            const roomCountEl = document.getElementById('room-count');
+            const userCountEl = document.getElementById('user-count');
+            const container = document.getElementById('rooms-container');
+
+            const roomIds = Object.keys(rooms);
+            let totalUsers = 0;
+
+            roomCountEl.innerText = roomIds.length;
+
+            if (roomIds.length === 0) {
+                userCountEl.innerText = 0;
+                container.innerHTML = '<div class="empty-state">Henüz aktif bir oda bulunmuyor.</div>';
+                return;
+            }
+
+            container.innerHTML = '';
+
+            roomIds.forEach(roomId => {
+                const users = rooms[roomId];
+                totalUsers += users.length;
+
+                const roomCard = document.createElement('div');
+                roomCard.className = 'room-card';
+
+                let usersHtml = '';
+                users.forEach(user => {
+                    usersHtml += `
+                        <div class="user-item">
+                            <div class="user-info">
+                                <div class="user-avatar">${user.username.charAt(0).toUpperCase()}</div>
+                                <div>
+                                    <div class="username">
+                                        ${user.username} 
+                                        ${user.isHost ? '<span class="host-badge">HOST</span>' : ''}
+                                    </div>
+                                    <div class="socket-id">${user.socketId}</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                roomCard.innerHTML = `
+                    <div class="room-header">
+                        <div class="room-id">ID: ${roomId}</div>
+                        <div class="user-count">${users.length} Users</div>
+                    </div>
+                    <div class="room-body">
+                        <div class="user-list">
+                            ${usersHtml}
+                        </div>
+                    </div>
+                `;
+                container.appendChild(roomCard);
+            });
+
+            userCountEl.innerText = totalUsers;
+        }
+
+        // Initial fetch
+        socket.emit('get-dashboard-data');
+    </script>
+</body>
+
+</html>
