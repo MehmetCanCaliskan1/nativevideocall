@@ -14,6 +14,7 @@ import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraMetadata
 import android.os.Build
+
 class PeerConnectionClient(
     private val context: Context,
     private val roomId: String,
@@ -23,15 +24,12 @@ class PeerConnectionClient(
 ) {
     fun sendJoinDecision(requesterId: String, requesterName: String, approved: Boolean) {
         val decisionData = JSONObject()
-
         decisionData.put("decision", if (approved) "approve" else "reject")
-
         decisionData.put("requesterId", requesterId)
-
         decisionData.put("requesterName", requesterName)
-
         socket.emit("handle-join-request", decisionData)
     }
+
     fun toggleFlash(isEnable: Boolean): Boolean {
         Log.d(TAG, "toggleFlash triggered. Requested: $isEnable")
 
@@ -42,7 +40,6 @@ class PeerConnectionClient(
         }
 
         try {
-            // Find "currentSession" field in the hierarchy
             var currentClass: Class<*>? = videoCapturer!!.javaClass
             var sessionField: java.lang.reflect.Field? = null
 
@@ -67,7 +64,6 @@ class PeerConnectionClient(
             val fields = sessionClass.declaredFields
             fields.forEach { it.isAccessible = true }
 
-            // Handle Camera1 or Camera2 sessions
             if (sessionClass.name.contains("Camera1Session")) {
                 val cameraField = fields.find { it.type.name.contains("android.hardware.Camera") }
                 if (cameraField != null) {
@@ -83,47 +79,44 @@ class PeerConnectionClient(
                     }
                 }
             } else if (sessionClass.name.contains("Camera2Session")) {
-                val sessionField = fields.find { it.type == android.hardware.camera2.CameraCaptureSession::class.java }
-                if (sessionField == null) {
+                val sessionField2 = fields.find { it.type == android.hardware.camera2.CameraCaptureSession::class.java }
+                if (sessionField2 == null) {
                     Log.e(TAG, "Camera2Session: captureSession field not found")
                     return false
                 }
-                
-                val captureSession = sessionField.get(currentSession) as android.hardware.camera2.CameraCaptureSession
+
+                val captureSession = sessionField2.get(currentSession) as android.hardware.camera2.CameraCaptureSession
                 var builder: android.hardware.camera2.CaptureRequest.Builder? = null
                 var callback: android.hardware.camera2.CameraCaptureSession.CaptureCallback? = null
 
-                // 1. Try to get existing builder field
                 val builderField = fields.find { it.type == android.hardware.camera2.CaptureRequest.Builder::class.java }
                     ?: fields.find { it.name == "captureRequestBuilder" || it.name == "captureRequest" || it.name == "builder" }
-                
+
                 if (builderField != null) {
                     builder = builderField.get(currentSession) as? android.hardware.camera2.CaptureRequest.Builder
                     val callbackField = fields.find { it.type.name.contains("CaptureCallback") }
                     callback = callbackField?.get(currentSession) as? android.hardware.camera2.CameraCaptureSession.CaptureCallback
                 }
 
-                // 2. Fallback: Create a new builder if it's not stored as a field (common in some WebRTC versions)
                 if (builder == null) {
                     val cameraDeviceField = fields.find { it.type == android.hardware.camera2.CameraDevice::class.java }
                     val surfaceField = fields.find { it.type == android.view.Surface::class.java }
-                    
+
                     if (cameraDeviceField != null && surfaceField != null) {
                         val cameraDevice = cameraDeviceField.get(currentSession) as android.hardware.camera2.CameraDevice
                         val surface = surfaceField.get(currentSession) as android.view.Surface
                         builder = cameraDevice.createCaptureRequest(android.hardware.camera2.CameraDevice.TEMPLATE_RECORD)
                         builder.addTarget(surface)
-                        
-                        // Try to restore original FPS settings from captureFormat to avoid framerate drops
+
                         try {
                             val formatField = fields.find { it.name == "captureFormat" }
                             val fpsUnitFactorField = fields.find { it.name == "fpsUnitFactor" }
                             if (formatField != null && fpsUnitFactorField != null) {
                                 val format = formatField.get(currentSession)
                                 val fpsUnitFactor = fpsUnitFactorField.get(currentSession) as Int
-                                val framerate = format!!.javaClass.getDeclaredField("framerate").let { 
+                                val framerate = format!!.javaClass.getDeclaredField("framerate").let {
                                     it.isAccessible = true
-                                    it.get(format) 
+                                    it.get(format)
                                 }
                                 val minFps = framerate!!.javaClass.getDeclaredField("min").let {
                                     it.isAccessible = true
@@ -133,8 +126,10 @@ class PeerConnectionClient(
                                     it.isAccessible = true
                                     it.get(framerate)
                                 } as Int
-                                builder.set(android.hardware.camera2.CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, 
-                                    android.util.Range(minFps / fpsUnitFactor, maxFps / fpsUnitFactor))
+                                builder.set(
+                                    android.hardware.camera2.CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
+                                    android.util.Range(minFps / fpsUnitFactor, maxFps / fpsUnitFactor)
+                                )
                             }
                         } catch (e: Exception) {
                             Log.w(TAG, "Failed to restore FPS settings: ${e.message}")
@@ -143,9 +138,11 @@ class PeerConnectionClient(
                 }
 
                 if (builder != null) {
-                    builder.set(android.hardware.camera2.CaptureRequest.FLASH_MODE,
+                    builder.set(
+                        android.hardware.camera2.CaptureRequest.FLASH_MODE,
                         if (isEnable) android.hardware.camera2.CameraMetadata.FLASH_MODE_TORCH
-                        else android.hardware.camera2.CameraMetadata.FLASH_MODE_OFF)
+                        else android.hardware.camera2.CameraMetadata.FLASH_MODE_OFF
+                    )
 
                     captureSession.setRepeatingRequest(builder.build(), callback, null)
                     return true
@@ -158,7 +155,9 @@ class PeerConnectionClient(
         }
 
         return false
-    }  companion object {
+    }
+
+    companion object {
         private const val TAG = "PeerConnectionClient"
     }
 
@@ -183,8 +182,6 @@ class PeerConnectionClient(
         initSignaling(host)
     }
 
-    // initialize
-
     private fun initWebRtc() {
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(context)
@@ -202,7 +199,6 @@ class PeerConnectionClient(
 
         pcConstraints.mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"))
         pcConstraints.mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"))
-
     }
 
     private fun initSignaling(host: String) {
@@ -223,7 +219,6 @@ class PeerConnectionClient(
 
         signalingHandler.setupListeners()
 
-        // 1. Socket bağlantısını kontrol et
         socket.on(Socket.EVENT_CONNECT) {
             Log.d(TAG, "Socket: CONNECTED to server")
         }
@@ -232,21 +227,15 @@ class PeerConnectionClient(
             Log.e(TAG, "Socket: CONNECTION ERROR: ${args[0]}")
         }
 
-        // 2. join-request dinleyicisi
         socket.on("join-request") { args ->
             Log.d(TAG, "EVENT: join-request received. Data: ${args.getOrNull(0)}")
-
             if (args.isNotEmpty()) {
                 try {
                     val data = args[0] as JSONObject
                     val requesterId = data.optString("socketId", data.optString("id"))
-
                     val requesterName = data.optString("username", data.optString("name", "Misafir"))
-
                     Log.d(TAG, "Parsing Success -> ID: $requesterId, Name: $requesterName")
-
                     rtcListener.onJoinRequest(requesterId, requesterName)
-
                 } catch (e: Exception) {
                     Log.e(TAG, "JSON Parsing Error in join-request", e)
                 }
@@ -257,19 +246,17 @@ class PeerConnectionClient(
 
         socket.on("join-rejected") {
             Log.d(TAG, "Giriş isteği host tarafından reddedildi.")
-            // Activity'e haber ver
             rtcListener.onJoinRejected("Host isteğinizi reddetti.")
         }
+
         socket.on("user-disconnected") {
-            // sunucudan sinyal gelir gelmez çalışır
             rtcListener.onRemoveRemoteStream()
         }
-
 
         socket.connect()
     }
 
-    //  PUBLIC API
+    // PUBLIC API
 
     fun start() {
         startCameraCapture()
@@ -312,7 +299,7 @@ class PeerConnectionClient(
         socket.disconnect()
     }
 
-    /*  PEER  */
+    /* PEER */
 
     private fun createPeer(): WebRtcPeer {
         peer = WebRtcPeer(
@@ -325,7 +312,7 @@ class PeerConnectionClient(
         return peer!!
     }
 
-    //  CAMERA
+    // CAMERA
 
     private fun startCameraCapture() {
         localStream = factory!!.createLocalMediaStream("LOCAL_STREAM")
@@ -372,8 +359,6 @@ class PeerConnectionClient(
 
         throw RuntimeException("No camera found")
     }
-
-
 }
 
 private fun VideoCapturer.stopCaptureSafely() {
@@ -383,6 +368,3 @@ private fun VideoCapturer.stopCaptureSafely() {
         Log.e("PeerConnectionClient", "stopCapture error", e)
     }
 }
-
-
-

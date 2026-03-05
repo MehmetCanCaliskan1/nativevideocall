@@ -8,13 +8,18 @@ protocol WebRTCClientDelegate: AnyObject {
     func didConnectWebRTC()
     func didDisconnectWebRTC()
     func onPeersConnectionStatusChange(connected: Bool)
+    func didReceiveRemoteStream(stream: RTCMediaStream)
 }
 
 class WebRTCClient: NSObject, RTCPeerConnectionDelegate, RTCVideoViewDelegate {
     
     // MARK: - Properties
     private var peerConnectionFactory: RTCPeerConnectionFactory!
-    private var peerConnection: RTCPeerConnection?
+    
+    // SFU modunda iki ayrı PeerConnection
+    private var sendPC: RTCPeerConnection?
+    private var recvPC: RTCPeerConnection?
+    
     private var videoCapturer: RTCVideoCapturer!
     private var localVideoTrack: RTCVideoTrack!
     private var localAudioTrack: RTCAudioTrack!
@@ -32,6 +37,11 @@ class WebRTCClient: NSObject, RTCPeerConnectionDelegate, RTCVideoViewDelegate {
     weak var delegate: WebRTCClientDelegate?
     public private(set) var isConnected: Bool = false
     
+    // Mediasoup state
+    private var routerRtpCapabilities: [String: Any]?
+    private var sendTransportParams: [String: Any]?
+    private var recvTransportParams: [String: Any]?
+    
     // MARK: - Init & Deinit
     override init() {
         super.init()
@@ -41,7 +51,8 @@ class WebRTCClient: NSObject, RTCPeerConnectionDelegate, RTCVideoViewDelegate {
     deinit {
         print("WebRTC Client Deinit")
         self.peerConnectionFactory = nil
-        self.peerConnection = nil
+        self.sendPC = nil
+        self.recvPC = nil
     }
     
     // MARK: - View Accessors
@@ -91,66 +102,122 @@ class WebRTCClient: NSObject, RTCPeerConnectionDelegate, RTCVideoViewDelegate {
         remoteRenderView?.frame = remoteView.frame
     }
     
-    // MARK: - Connect / Disconnect
-    func connect(onSuccess: @escaping (RTCSessionDescription) -> Void) {
-        self.peerConnection = setupPeerConnection()
-        self.peerConnection!.delegate = self
+    // MARK: - SFU Connect Flow
+    
+    /// Mediasoup SFU akışını başlatır
+    /// Sunucudan gelen transport parametreleriyle send ve recv PC oluşturur
+    func startSFUConnection(
+        sendTransportParams: [String: Any],
+        recvTransportParams: [String: Any],
+        routerRtpCapabilities: [String: Any]
+    ) {
+        self.routerRtpCapabilities = routerRtpCapabilities
+        self.sendTransportParams = sendTransportParams
+        self.recvTransportParams = recvTransportParams
+        
+        // Send PeerConnection oluştur
+        createSendPeerConnection()
+    }
+    
+    private func createSendPeerConnection() {
+        sendPC = setupPeerConnection()
+        sendPC?.delegate = self
         
         if self.channels.video {
-            self.peerConnection!.add(localVideoTrack, streamIds: ["stream0"])
+            sendPC?.add(localVideoTrack, streamIds: ["stream0"])
         }
         if self.channels.audio {
-            self.peerConnection!.add(localAudioTrack, streamIds: ["stream0"])
+            sendPC?.add(localAudioTrack, streamIds: ["stream0"])
         }
         
-        makeOffer(onSuccess: onSuccess)
+        // Offer oluştur
+        sendPC?.offer(for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)) { [weak self] sdp, err in
+            guard let self = self, let offerSDP = sdp else {
+                print("Send offer oluşturulamadı: \(err?.localizedDescription ?? "unknown")")
+                return
+            }
+            
+            self.sendPC?.setLocalDescription(offerSDP) { err in
+                if let error = err {
+                    print("Send local SDP ayarlanamadı: \(error)")
+                    return
+                }
+                
+                // Notify delegate that send PC is ready with local SDP
+                print("Send PeerConnection offer oluşturuldu")
+            }
+        }
+    }
+    
+    /// Consumer için recv PeerConnection oluşturur
+    func createRecvPeerConnection() {
+        if recvPC != nil { return }
+        
+        recvPC = setupPeerConnection()
+        recvPC?.delegate = self
+        print("Recv PeerConnection oluşturuldu")
+    }
+    
+    /// Offer SDP'sini döner (send transport bağlantısı için)
+    func getSendLocalSDP() -> RTCSessionDescription? {
+        return sendPC?.localDescription
+    }
+        
+    /// Sunucudan gelen answer SDP'sini send PC'ye ayarlar
+    func setSendRemoteDescription(_ sdp: RTCSessionDescription, completion: @escaping (Error?) -> Void) {
+        sendPC?.setRemoteDescription(sdp, completionHandler: completion)
+    }
+    
+    /// Send PC'deki sender'ların RTP parametrelerini döner
+    func getSendRtpParameters(kind: String) -> [String: Any]? {
+        guard let senders = sendPC?.senders else { return nil }
+        guard let sender = senders.first(where: { $0.track?.kind == kind }) else { return nil }
+        
+        let params = sender.parameters
+        
+        var codecs: [[String: Any]] = []
+        for codec in params.codecs {
+            var codecDict: [String: Any] = [
+                "mimeType": codec.name,
+                "clockRate": codec.clockRate,
+                "payloadType": codec.payloadType
+            ]
+            if let channels = codec.numChannels {
+                codecDict["channels"] = channels
+            }
+            codecDict["parameters"] = codec.parameters
+            codecs.append(codecDict)
+        }
+        
+        var encodings: [[String: Any]] = []
+        for encoding in params.encodings {
+            var encDict: [String: Any] = [:]
+            if let ssrc = encoding.ssrc {
+                encDict["ssrc"] = ssrc
+            }
+            encodings.append(encDict)
+        }
+        
+        var headerExtensions: [[String: Any]] = []
+        for ext in params.headerExtensions {
+            headerExtensions.append([
+                "uri": ext.uri,
+                "id": ext.id
+            ])
+        }
+        
+        return [
+            "codecs": codecs,
+            "encodings": encodings,
+            "headerExtensions": headerExtensions
+        ]
     }
     
     func disconnect() {
-        if self.peerConnection != nil {
-            self.peerConnection!.close()
-        }
-    }
-    
-    // MARK: - Signaling Handling
-    func receiveOffer(offerSDP: RTCSessionDescription, onCreateAnswer: @escaping (RTCSessionDescription) -> Void) {
-        if self.peerConnection == nil {
-            print("Offer received, creating peer connection")
-            self.peerConnection = setupPeerConnection()
-            self.peerConnection!.delegate = self
-            
-            if self.channels.video {
-                self.peerConnection!.add(localVideoTrack, streamIds: ["stream-0"])
-            }
-            if self.channels.audio {
-                self.peerConnection!.add(localAudioTrack, streamIds: ["stream-0"])
-            }
-        }
-        
-        self.peerConnection!.setRemoteDescription(offerSDP) { (err) in
-            if let error = err {
-                print("Failed to set remote offer SDP: \(error)")
-                return
-            }
-            self.makeAnswer(onCreateAnswer: onCreateAnswer)
-        }
-    }
-    
-    func receiveAnswer(answerSDP: RTCSessionDescription) {
-        self.peerConnection!.setRemoteDescription(answerSDP) { (err) in
-            if let error = err {
-                print("Failed to set remote answer SDP: \(error)")
-                return
-            }
-        }
-    }
-    
-    func receiveCandidate(candidate: RTCIceCandidate) {
-        self.peerConnection?.add(candidate) { err in
-            if let error = err {
-                print("Failed to set ice candidate: \(error.localizedDescription)")
-            }
-        }
+        sendPC?.close()
+        sendPC = nil
+        recvPC?.close()
+        recvPC = nil
     }
     
     // MARK: - Private Setup Methods
@@ -179,8 +246,6 @@ class WebRTCClient: NSObject, RTCPeerConnectionDelegate, RTCVideoViewDelegate {
         rtcConf.bundlePolicy = .maxBundle
         rtcConf.rtcpMuxPolicy = .require
         rtcConf.tcpCandidatePolicy = .enabled
-        
-        // DÜZELTME 1: .relay yerine .all yapıyoruz ki yerel ağda da çalışsın
         rtcConf.iceTransportPolicy = .all
         
         let mediaConstraints = RTCMediaConstraints(
@@ -188,31 +253,28 @@ class WebRTCClient: NSObject, RTCPeerConnectionDelegate, RTCVideoViewDelegate {
             optionalConstraints: ["DtlsSrtpKeyAgreement": "true"]
         )
         
-        // Factory'nin var olduğundan emin olalım
         guard let pc = self.peerConnectionFactory.peerConnection(
             with: rtcConf,
             constraints: mediaConstraints,
             delegate: self
         ) else {
-            print("❌ HATA: PeerConnection oluşturulamadı. Konfigürasyonu kontrol et.")
-            // fatalError kullanma, uygulamanın çökmesini engellemek için nil dön
+            print("❌ HATA: PeerConnection oluşturulamadı.")
             return nil
         }
         
         return pc
     }
+    
     private func setupView() {
-        // Local View
         localRenderView = RTCMTLVideoView()
         localRenderView!.delegate = self
-        localRenderView!.videoContentMode = .scaleAspectFill // Tam ekran dolgusu
+        localRenderView!.videoContentMode = .scaleAspectFill
         localView = UIView()
         localView.addSubview(localRenderView!)
         
-        // Remote View
         remoteRenderView = RTCMTLVideoView()
         remoteRenderView?.delegate = self
-        remoteRenderView!.videoContentMode = .scaleAspectFill // Tam ekran dolgusu
+        remoteRenderView!.videoContentMode = .scaleAspectFill
         remoteView = UIView()
         remoteView.addSubview(remoteRenderView!)
     }
@@ -281,52 +343,12 @@ class WebRTCClient: NSObject, RTCPeerConnectionDelegate, RTCVideoViewDelegate {
             }
             
         } else if let capturer = self.videoCapturer as? RTCFileVideoCapturer {
-            // Simulator Support
             if Bundle.main.path(forResource: "sample", ofType: "mp4") != nil {
                 capturer.startCapturing(fromFileNamed: "sample.mp4") { err in
                     print(err as Any)
                 }
             } else {
                 print("Simulator video file (sample.mp4) not found in bundle.")
-            }
-        }
-    }
-    
-    // MARK: - Signaling Helpers
-    private func makeOffer(onSuccess: @escaping (RTCSessionDescription) -> Void) {
-        self.peerConnection?.offer(for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)) { (sdp, err) in
-            if let error = err {
-                print("Error making offer: \(error)")
-                return
-            }
-            
-            if let offerSDP = sdp {
-                self.peerConnection!.setLocalDescription(offerSDP, completionHandler: { (err) in
-                    if let error = err {
-                        print("Error setting local offer: \(error)")
-                        return
-                    }
-                    onSuccess(offerSDP)
-                })
-            }
-        }
-    }
-    
-    private func makeAnswer(onCreateAnswer: @escaping (RTCSessionDescription) -> Void) {
-        self.peerConnection!.answer(for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)) { (answerSessionDescription, err) in
-            if let error = err {
-                print("Error making answer: \(error)")
-                return
-            }
-            
-            if let answerSDP = answerSessionDescription {
-                self.peerConnection!.setLocalDescription(answerSDP, completionHandler: { (err) in
-                    if let error = err {
-                        print("Error setting local answer: \(error)")
-                        return
-                    }
-                    onCreateAnswer(answerSDP)
-                })
             }
         }
     }
@@ -343,8 +365,10 @@ class WebRTCClient: NSObject, RTCPeerConnectionDelegate, RTCVideoViewDelegate {
     private func onDisConnected() {
         self.isConnected = false
         DispatchQueue.main.async {
-            self.peerConnection?.close()
-            self.peerConnection = nil
+            self.sendPC?.close()
+            self.sendPC = nil
+            self.recvPC?.close()
+            self.recvPC = nil
             self.remoteRenderView?.isHidden = true
             self.delegate?.didDisconnectWebRTC()
         }
@@ -374,6 +398,7 @@ extension WebRTCClient {
     }
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
+        // SFU modunda ICE candidate'ler sunucu transport'ları tarafından yönetilir
         self.delegate?.didGenerateCandidate(iceCandidate: candidate)
     }
     
@@ -390,6 +415,9 @@ extension WebRTCClient {
             print("Remote audio track found")
             audioTrack.source.volume = 10
         }
+        
+        // Notify delegate about remote stream
+        delegate?.didReceiveRemoteStream(stream: stream)
     }
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {
@@ -401,9 +429,8 @@ extension WebRTCClient {
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
     
- 
     func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {
-        print("Data channel opened but ignored (Chat feature removed)")
+        print("Data channel opened but ignored")
     }
 }
 

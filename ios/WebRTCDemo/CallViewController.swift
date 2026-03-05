@@ -8,19 +8,20 @@ let SERVER_URL = "https://lithophytic-nonfilamentous-myrta.ngrok-free.dev"
 class CallViewController: UIViewController, WebRTCClientDelegate {
     var targetSocketId: String?
     var isCurrentUserHost: Bool = false
-    func didReceiveMessage(message: String) {
-        
-    }
     
-    func onDataChannelMessage(message: String) {
-        
-    }
-    //bekleme
+    func didReceiveMessage(message: String) {}
+    func onDataChannelMessage(message: String) {}
+    
+    // Mediasoup state
+    private var routerRtpCapabilities: [String: Any]?
+    private var roomId: String = ""
+    
+    // Bekleme
     private var isBackCameraActive: Bool = false
     private let waitingOverlay = UIView()
     private let waitingLabel = UILabel()
     private let waitingSpinner = UIActivityIndicatorView(style: .large)
-
+    
     private func setupWaitingOverlay() {
         waitingOverlay.backgroundColor = UIColor(red: 0.11, green: 0.13, blue: 0.18, alpha: 1.0)
         waitingOverlay.frame = view.bounds
@@ -41,9 +42,7 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
         waitingOverlay.addSubview(waitingLabel)
         view.addSubview(waitingOverlay)
     }
-
     
-    var roomId: String = ""
     let manager = SocketManager(socketURL: URL(string: SERVER_URL)!, config: [.log(true), .compress])
     var socket: SocketIOClient!
     var webRTCClient: WebRTCClient!
@@ -76,15 +75,13 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
     // Local Video
     private let localVideoContainer = UIView()
     private let localMuteIndicator = UIImageView()
-    private let hostLabel=UILabel()
+    private let hostLabel = UILabel()
     
     // Bottom Controls
     private let bottomControlsContainer = UIView()
     private let primaryControlsContainer = UIView()
     private let glassPanelView = UIView()
     private let primaryControlsStack = UIStackView()
-    
-  
     
     // Primary Control Containers
     private let muteContainer = UIView()
@@ -108,7 +105,6 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        // Hide navigation bar and disable swipe back gesture
         navigationController?.setNavigationBarHidden(true, animated: false)
         navigationController?.interactivePopGestureRecognizer?.isEnabled = false
         
@@ -119,7 +115,6 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
         socket = manager.defaultSocket
         
         setupWaitingOverlay()
-        
         setupSocketHandlers()
         setupUI()
         
@@ -148,7 +143,6 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
                 "username": "iOS User"
             ]
             
-            // Backend uyumlu 'join-room'
             self.socket.emit("join-room", payload)
             
             self.webRTCClient = WebRTCClient()
@@ -160,6 +154,7 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
         socket.on(clientEvent: .disconnect) { data, ack in
             print("socket disconnected")
         }
+        
         // Host iseniz, odaya girmek isteyen biri olduğunda tetiklenir
         socket.on("join-request") { [weak self] data, _ in
             guard let self = self,
@@ -174,7 +169,6 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
             )
             
             alert.addAction(UIAlertAction(title: "Onayla", style: .default) { _ in
-                // Sunucuya onay gönder
                 self.socket.emit("handle-join-request", [
                     "decision": "approve",
                     "requesterId": requesterId,
@@ -183,7 +177,6 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
             })
             
             alert.addAction(UIAlertAction(title: "Reddet", style: .destructive) { _ in
-                // Sunucuya red gönder
                 self.socket.emit("handle-join-request", [
                     "decision": "reject",
                     "requesterId": requesterId,
@@ -193,6 +186,7 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
             
             self.present(alert, animated: true)
         }
+        
         socket.on("join-rejected") { [weak self] _, _ in
             let alert = UIAlertController(title: "Reddedildi", message: "Odaya giriş isteğiniz Host tarafından reddedildi.", preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "Tamam", style: .default) { _ in
@@ -200,90 +194,58 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
             })
             self?.present(alert, animated: true)
         }
+        
         // Backend onaylayınca
         socket.on("room-joined") { [weak self] data, ack in
             guard let self = self,
                   let args = data as? [[String: Any]],
                   let firstArg = args.first else { return }
             
-            // Bekleme ekranını kapat
             DispatchQueue.main.async {
                 self.waitingOverlay.isHidden = true
                 let isHost = firstArg["isHost"] as? Bool ?? false
                 self.isCurrentUserHost = isHost
-                                self.hostLabel.isHidden = false
-                                
-                                if isHost {
-                                    self.hostLabel.text = "HOST"
-                                    self.hostLabel.backgroundColor = .systemOrange
-                                } else {
-                                    self.hostLabel.text = "GUEST"
-                                    self.hostLabel.backgroundColor = .systemBlue
-                                }
-            }
-
-            if let users = firstArg["users"] as? [[String: Any]] {
-                // Listedeki diğer kullanıcıyı hedef seç (Kendimiz hariç olan)
-                if let peer = users.first(where: { ($0["socketId"] as? String) != self.socket.sid }) {
-                    self.targetSocketId = peer["socketId"] as? String
-                    
-                    // Eğer biz Host değilsek, Offer'ı (bağlantı isteğini) biz başlatırız
-                    let isHost = firstArg["isHost"] as? Bool ?? false
-                    if !isHost {
-                        self.webRTCClient.connect(onSuccess: { offerSDP in
-                            self.sendSDP(sessionDescription: offerSDP)
-                        })
-                    }
+                self.hostLabel.isHidden = false
+                
+                if isHost {
+                    self.hostLabel.text = "HOST"
+                    self.hostLabel.backgroundColor = .systemOrange
+                } else {
+                    self.hostLabel.text = "GUEST"
+                    self.hostLabel.backgroundColor = .systemBlue
                 }
             }
-        }
-        socket.on("webrtc-offer") { [weak self] data, ack in
-            guard let payload = data as? [[String: Any]],
-                  let fromId = payload[0]["from"] as? String, // Teklifi gönderen kişinin gerçek ID'si
-                  let offerData = payload[0]["offer"] as? [String: Any],
-                  let sdp = offerData["sdp"] as? String else { return }
             
-            print("Offer alındı, gönderen: \(fromId)")
+            if let users = firstArg["users"] as? [[String: Any]] {
+                if let peer = users.first(where: { ($0["socketId"] as? String) != self.socket.sid }) {
+                    self.targetSocketId = peer["socketId"] as? String
+                }
+            }
             
-            self?.targetSocketId = fromId
-            
-            let offerSDP = RTCSessionDescription(type: .offer, sdp: sdp)
-            self?.webRTCClient.receiveOffer(offerSDP: offerSDP, onCreateAnswer: { answerSDP in
-                self?.sendSDP(sessionDescription: answerSDP)
-            })
+            // Mediasoup SFU akışını başlat
+            self.startMediasoupFlow()
         }
         
-        socket.on("webrtc-answer") { [weak self] data, ack in
-            guard let payload = data as? [[String: Any]],
-                  let answerData = payload[0]["answer"] as? [String: Any],
-                  let sdp = answerData["sdp"] as? String else { return }
+        // Yeni producer bildirimi
+        socket.on("new-producer") { [weak self] data, _ in
+            guard let self = self,
+                  let payload = data as? [[String: Any]],
+                  let producerId = payload[0]["producerId"] as? String,
+                  let kind = payload[0]["kind"] as? String else { return }
             
-            print("Answer alındı")
-            
-            let answerSDP = RTCSessionDescription(type: .answer, sdp: sdp)
-            self?.webRTCClient.receiveAnswer(answerSDP: answerSDP)
+            print("Yeni producer: \(kind) / \(producerId)")
+            self.consumeProducer(producerId: producerId, kind: kind)
         }
         
-        socket.on("webrtc-ice") { [weak self] data, ack in
-            guard let payload = data as? [[String: Any]],
-                  let candidateWrap = payload[0]["candidate"] as? [String: Any],
-                  let candidateSdp = candidateWrap["candidate"] as? String,
-                  let sdpMLineIndex = candidateWrap["sdpMLineIndex"] as? Int32 else { return }
-            
-            print("ICE Candidate alındı")
-            
-            self?.webRTCClient.receiveCandidate(
-                candidate: RTCIceCandidate(
-                    sdp: candidateSdp,
-                    sdpMLineIndex: sdpMLineIndex,
-                    sdpMid: candidateWrap["sdpMid"] as? String
-                )
-            )
+        // Producer kapatıldı
+        socket.on("producer-closed") { [weak self] data, _ in
+            print("Producer kapatıldı bildirimi alındı")
         }
+        
+        // Kullanıcı ayrıldı
         socket.on("user-disconnected") { [weak self] data, _ in
             guard let self = self else { return }
             
-            // Ayrılan kişinin ismini al
             var leaverName = "Misafir"
             if let args = data as? [[String: Any]],
                let firstArg = args.first,
@@ -294,9 +256,6 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
             print("\(leaverName) odadan ayrıldı.")
             
             DispatchQueue.main.async {
-                
-                // Eğer ben HOST DEĞİLSEM
-                // Odayı kapat ve çıkış yap.
                 if !self.isCurrentUserHost {
                     let alert = UIAlertController(
                         title: "Görüşme Sonlandı",
@@ -305,10 +264,8 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
                     )
                     
                     alert.addAction(UIAlertAction(title: "Tamam", style: .destructive) { _ in
-                        // WebRTC ve Socket bağlantılarını temizle
                         self.socket.disconnect()
                         self.webRTCClient?.disconnect()
-                        // Ekranı kapat
                         self.navigationController?.popViewController(animated: true)
                     })
                     
@@ -316,24 +273,181 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
                     return
                 }
                 
-                
-                // Eğer ben Host isem ve Guest çıktıysa
                 if self.isCurrentUserHost {
                     self.showToast(message: "\(leaverName) odadan ayrıldı.", duration: 4.0)
                 }
                 
-                // Bağlantı UI durumunu güncelle
                 self.statusLabel.text = "Disconnected"
                 self.connectionDot.isHidden = true
                 self.peersConnected = false
                 self.connectionDot.layer.removeAllAnimations()
-              
             }
         }
+        
         socket.on("waiting-approval") { [weak self] _, _ in
             DispatchQueue.main.async {
                 self?.waitingOverlay.isHidden = false
                 self?.statusLabel.text = "Waiting for Host..."
+            }
+        }
+    }
+    
+    // MARK: - Mediasoup SFU Flow
+    
+    private func startMediasoupFlow() {
+        print("Mediasoup SFU akışı başlıyor...")
+        
+        // 1. RTP yeteneklerini al
+        socket.emitWithAck("get-rtp-capabilities").timingOut(after: 10) { [weak self] data in
+            guard let self = self,
+                  let response = data.first as? [String: Any],
+                  let rtpCapabilities = response["rtpCapabilities"] as? [String: Any] else {
+                print("RTP capabilities alınamadı")
+                return
+            }
+            
+            self.routerRtpCapabilities = rtpCapabilities
+            print("RTP yetenekleri alındı")
+            
+            // 2. Send transport oluştur
+            self.createTransport(direction: "send") { [weak self] sendParams in
+                guard let self = self else { return }
+                
+                // 3. Recv transport oluştur
+                self.createTransport(direction: "recv") { [weak self] recvParams in
+                    guard let self = self else { return }
+                    
+                    // 4. Send transport'u bağla ve produce yap
+                    self.connectAndProduce(sendParams: sendParams)
+                    
+                    // 5. Mevcut producer'ları al ve consume et
+                    self.getExistingProducers()
+                }
+            }
+        }
+    }
+    
+    private func createTransport(direction: String, completion: @escaping ([String: Any]) -> Void) {
+        let payload: [String: Any] = [
+            "roomId": roomId,
+            "direction": direction
+        ]
+        
+        socket.emitWithAck("create-transport", payload).timingOut(after: 10) { data in
+            guard let response = data.first as? [String: Any] else {
+                print("Transport oluşturulamadı: \(direction)")
+                return
+            }
+            print("Transport oluşturuldu: \(direction) / \(response["id"] ?? "?")")
+            completion(response)
+        }
+    }
+    
+    private func connectAndProduce(sendParams: [String: Any]) {
+        guard let transportId = sendParams["id"] as? String,
+              let dtlsParams = sendParams["dtlsParameters"] as? [String: Any] else {
+            return
+        }
+        
+        // DTLS bağlantısını kur
+        let connectPayload: [String: Any] = [
+            "roomId": roomId,
+            "direction": "send",
+            "dtlsParameters": dtlsParams
+        ]
+        
+        socket.emitWithAck("connect-transport", connectPayload).timingOut(after: 10) { [weak self] data in
+            guard let self = self else { return }
+            print("Send transport bağlandı")
+            
+            // Audio produce
+            if let audioParams = self.webRTCClient?.getSendRtpParameters(kind: "audio") {
+                self.produce(kind: "audio", rtpParameters: audioParams)
+            }
+            
+            // Video produce
+            if let videoParams = self.webRTCClient?.getSendRtpParameters(kind: "video") {
+                self.produce(kind: "video", rtpParameters: videoParams)
+            }
+        }
+    }
+    
+    private func produce(kind: String, rtpParameters: [String: Any]) {
+        let payload: [String: Any] = [
+            "roomId": roomId,
+            "kind": kind,
+            "rtpParameters": rtpParameters
+        ]
+        
+        socket.emitWithAck("produce", payload).timingOut(after: 10) { data in
+            guard let response = data.first as? [String: Any],
+                  let producerId = response["producerId"] as? String else {
+                print("Produce başarısız: \(kind)")
+                return
+            }
+            print("Producer oluşturuldu: \(kind) / \(producerId)")
+        }
+    }
+    
+    private func getExistingProducers() {
+        let payload: [String: Any] = ["roomId": roomId]
+        
+        socket.emitWithAck("get-producers", payload).timingOut(after: 10) { [weak self] data in
+            guard let self = self,
+                  let response = data.first as? [String: Any],
+                  let producers = response["producers"] as? [[String: Any]] else {
+                return
+            }
+            
+            for producer in producers {
+                if let producerId = producer["producerId"] as? String,
+                   let kind = producer["kind"] as? String {
+                    self.consumeProducer(producerId: producerId, kind: kind)
+                }
+            }
+        }
+    }
+    
+    private func consumeProducer(producerId: String, kind: String) {
+        guard let rtpCapabilities = routerRtpCapabilities else { return }
+        
+        // Recv transport'u bağla (ilk seferde)
+        let recvConnectPayload: [String: Any] = [
+            "roomId": roomId,
+            "direction": "recv",
+            "dtlsParameters": [:] as [String: Any] // Sunucu tarafı zaten ayarlı
+        ]
+        
+        let consumePayload: [String: Any] = [
+            "roomId": roomId,
+            "producerId": producerId,
+            "rtpCapabilities": rtpCapabilities
+        ]
+        
+        socket.emitWithAck("consume", consumePayload).timingOut(after: 10) { [weak self] data in
+            guard let self = self,
+                  let response = data.first as? [String: Any],
+                  let consumerId = response["consumerId"] as? String else {
+                print("Consume başarısız: \(kind)")
+                return
+            }
+            
+            print("Consumer oluşturuldu: \(kind) / \(consumerId)")
+            
+            // Consumer'ı resume et
+            let resumePayload: [String: Any] = [
+                "roomId": self.roomId,
+                "consumerId": consumerId
+            ]
+            
+            self.socket.emitWithAck("consumer-resume", resumePayload).timingOut(after: 10) { data in
+                print("Consumer resume edildi: \(consumerId)")
+            }
+            
+            DispatchQueue.main.async {
+                self.waitingOverlay.isHidden = true
+                self.statusLabel.text = "Connected"
+                self.connectionDot.isHidden = false
             }
         }
     }
@@ -357,7 +471,6 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
     }
     
     private func setupGradients() {
-        // Top gradient
         gradientOverlayTop.translatesAutoresizingMaskIntoConstraints = false
         let topGradient = CAGradientLayer()
         topGradient.colors = [
@@ -369,7 +482,6 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
         gradientOverlayTop.layer.addSublayer(topGradient)
         view.addSubview(gradientOverlayTop)
         
-        // Bottom gradient
         gradientOverlayBottom.translatesAutoresizingMaskIntoConstraints = false
         let bottomGradient = CAGradientLayer()
         bottomGradient.colors = [
@@ -398,21 +510,19 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
         view.addSubview(topBar)
         
         let flashButtonConfig = UIImage.SymbolConfiguration(pointSize: 18, weight: .regular)
-            flashButton.setImage(UIImage(systemName: "bolt.slash.fill", withConfiguration: flashButtonConfig), for: .normal)
-            flashButton.tintColor = .white
-            flashButton.backgroundColor = .clear
-            flashButton.addTarget(self, action: #selector(flashButtonTapped), for: .touchUpInside)
-            flashButton.translatesAutoresizingMaskIntoConstraints = false
+        flashButton.setImage(UIImage(systemName: "bolt.slash.fill", withConfiguration: flashButtonConfig), for: .normal)
+        flashButton.tintColor = .white
+        flashButton.backgroundColor = .clear
+        flashButton.addTarget(self, action: #selector(flashButtonTapped), for: .touchUpInside)
+        flashButton.translatesAutoresizingMaskIntoConstraints = false
         
         spacerView.translatesAutoresizingMaskIntoConstraints = false
         
-        // Room ID label
         roomIdLabel.text = "Room: \(roomId)"
         roomIdLabel.font = UIFont.systemFont(ofSize: 18, weight: .bold)
         roomIdLabel.textColor = .white
         roomIdLabel.textAlignment = .center
         
-        // Status container
         statusContainer.translatesAutoresizingMaskIntoConstraints = false
         
         connectionDot.backgroundColor = UIColor(red: 0.13, green: 0.80, blue: 0.47, alpha: 1.0)
@@ -440,7 +550,6 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
             statusLabel.bottomAnchor.constraint(equalTo: statusContainer.bottomAnchor)
         ])
         
-        // Center info stack
         centerInfoStack.axis = .vertical
         centerInfoStack.alignment = .center
         centerInfoStack.spacing = 4
@@ -448,7 +557,6 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
         centerInfoStack.addArrangedSubview(statusContainer)
         centerInfoStack.translatesAutoresizingMaskIntoConstraints = false
         
-        // Switch camera button
         let switchCameraButtonConfig = UIImage.SymbolConfiguration(pointSize: 18, weight: .regular)
         switchCameraButton.setImage(UIImage(systemName: "arrow.triangle.2.circlepath.camera.fill", withConfiguration: switchCameraButtonConfig), for: .normal)
         switchCameraButton.tintColor = .white
@@ -456,7 +564,6 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
         switchCameraButton.addTarget(self, action: #selector(switchCameraTapped), for: .touchUpInside)
         switchCameraButton.translatesAutoresizingMaskIntoConstraints = false
         
-        // Top bar stack
         topBarStack.axis = .horizontal
         topBarStack.alignment = .center
         topBarStack.distribution = .equalSpacing
@@ -482,7 +589,6 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
         localVideoContainer.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(localVideoContainer)
         
-        // Add mute indicator
         localMuteIndicator.image = UIImage(systemName: "mic.slash.fill")
         localMuteIndicator.tintColor = .white
         localMuteIndicator.backgroundColor = UIColor.red.withAlphaComponent(0.9)
@@ -493,17 +599,15 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
         localMuteIndicator.translatesAutoresizingMaskIntoConstraints = false
         localVideoContainer.addSubview(localMuteIndicator)
         
-                hostLabel.text = ""
-                hostLabel.font = .systemFont(ofSize: 10, weight: .bold)
-                hostLabel.textColor = .white
-                hostLabel.textAlignment = .center
-                hostLabel.layer.cornerRadius = 4
-                hostLabel.clipsToBounds = true
-                hostLabel.isHidden = true
-                hostLabel.translatesAutoresizingMaskIntoConstraints = false
-                localVideoContainer.addSubview(hostLabel)
-        
-        
+        hostLabel.text = ""
+        hostLabel.font = .systemFont(ofSize: 10, weight: .bold)
+        hostLabel.textColor = .white
+        hostLabel.textAlignment = .center
+        hostLabel.layer.cornerRadius = 4
+        hostLabel.clipsToBounds = true
+        hostLabel.isHidden = true
+        hostLabel.translatesAutoresizingMaskIntoConstraints = false
+        localVideoContainer.addSubview(hostLabel)
         
         NSLayoutConstraint.activate([
             localMuteIndicator.widthAnchor.constraint(equalToConstant: 20),
@@ -511,79 +615,69 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
             localMuteIndicator.trailingAnchor.constraint(equalTo: localVideoContainer.trailingAnchor, constant: -8),
             localMuteIndicator.bottomAnchor.constraint(equalTo: localVideoContainer.bottomAnchor, constant: -8),
             
-            
-            
             hostLabel.leadingAnchor.constraint(equalTo: localVideoContainer.leadingAnchor, constant: 6),
-                        hostLabel.topAnchor.constraint(equalTo: localVideoContainer.topAnchor, constant: 6),
-                        
-                        hostLabel.widthAnchor.constraint(equalToConstant: 45),
-                        
-                        hostLabel.heightAnchor.constraint(equalToConstant: 18)
+            hostLabel.topAnchor.constraint(equalTo: localVideoContainer.topAnchor, constant: 6),
+            hostLabel.widthAnchor.constraint(equalToConstant: 45),
+            hostLabel.heightAnchor.constraint(equalToConstant: 18)
         ])
         
-        // Setup dragging
         let panGesture = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
         localVideoContainer.addGestureRecognizer(panGesture)
     }
     
     private func setupBottomControls() {
-            bottomControlsContainer.translatesAutoresizingMaskIntoConstraints = false
-            view.addSubview(bottomControlsContainer)
-            
-            // --- PRIMARY STACK (Glass Panel) ---
-            glassPanelView.backgroundColor = UIColor(red: 0.06, green: 0.1, blue: 0.13, alpha: 0.75)
-            glassPanelView.layer.cornerRadius = 24
-            glassPanelView.layer.borderWidth = 1
-            glassPanelView.layer.borderColor = UIColor.white.withAlphaComponent(0.05).cgColor
-            glassPanelView.translatesAutoresizingMaskIntoConstraints = false
-            bottomControlsContainer.addSubview(glassPanelView)
-            
-            // Primary controls stack (Mute, End, Video)
-            primaryControlsStack.axis = .horizontal
-            primaryControlsStack.distribution = .equalSpacing
-            primaryControlsStack.spacing = 40
-            primaryControlsStack.translatesAutoresizingMaskIntoConstraints = false
-            glassPanelView.addSubview(primaryControlsStack)
-            
-            // Mute
-            setupPrimaryControl(
-                container: muteContainer,
-                button: muteButton,
-                label: muteLabel,
-                icon: "mic.fill",
-                title: "Mute",
-                size: 48,
-                action: #selector(muteButtonTapped)
-            )
-            primaryControlsStack.addArrangedSubview(muteContainer)
-            
-            // End Call
-            setupPrimaryControl(
-                container: endContainer,
-                button: endButton,
-                label: endLabel,
-                icon: "phone.down.fill",
-                title: "End",
-                size: 56,
-                backgroundColor: .systemRed,
-                action: #selector(endButtonTapped)
-            )
-            endLabel.font = UIFont.systemFont(ofSize: 10, weight: .bold)
-            endLabel.textColor = .white
-            primaryControlsStack.addArrangedSubview(endContainer)
-            
-            // Video Toggle
-            setupPrimaryControl(
-                container: videoContainer,
-                button: videoButton,
-                label: videoLabel,
-                icon: "video.fill",
-                title: "Video",
-                size: 48,
-                action: #selector(videoButtonTapped)
-            )
-            primaryControlsStack.addArrangedSubview(videoContainer)
-        }
+        bottomControlsContainer.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(bottomControlsContainer)
+        
+        glassPanelView.backgroundColor = UIColor(red: 0.06, green: 0.1, blue: 0.13, alpha: 0.75)
+        glassPanelView.layer.cornerRadius = 24
+        glassPanelView.layer.borderWidth = 1
+        glassPanelView.layer.borderColor = UIColor.white.withAlphaComponent(0.05).cgColor
+        glassPanelView.translatesAutoresizingMaskIntoConstraints = false
+        bottomControlsContainer.addSubview(glassPanelView)
+        
+        primaryControlsStack.axis = .horizontal
+        primaryControlsStack.distribution = .equalSpacing
+        primaryControlsStack.spacing = 40
+        primaryControlsStack.translatesAutoresizingMaskIntoConstraints = false
+        glassPanelView.addSubview(primaryControlsStack)
+        
+        setupPrimaryControl(
+            container: muteContainer,
+            button: muteButton,
+            label: muteLabel,
+            icon: "mic.fill",
+            title: "Mute",
+            size: 48,
+            action: #selector(muteButtonTapped)
+        )
+        primaryControlsStack.addArrangedSubview(muteContainer)
+        
+        setupPrimaryControl(
+            container: endContainer,
+            button: endButton,
+            label: endLabel,
+            icon: "phone.down.fill",
+            title: "End",
+            size: 56,
+            backgroundColor: .systemRed,
+            action: #selector(endButtonTapped)
+        )
+        endLabel.font = UIFont.systemFont(ofSize: 10, weight: .bold)
+        endLabel.textColor = .white
+        primaryControlsStack.addArrangedSubview(endContainer)
+        
+        setupPrimaryControl(
+            container: videoContainer,
+            button: videoButton,
+            label: videoLabel,
+            icon: "video.fill",
+            title: "Video",
+            size: 48,
+            action: #selector(videoButtonTapped)
+        )
+        primaryControlsStack.addArrangedSubview(videoContainer)
+    }
     
     private func setupSecondaryControl(container: UIView, button: UIButton, label: UILabel, icon: String, title: String, action: Selector) {
         container.translatesAutoresizingMaskIntoConstraints = false
@@ -651,68 +745,60 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
             label.bottomAnchor.constraint(equalTo: container.bottomAnchor)
         ])
     }
+    
     private func setupConstraints() {
-            NSLayoutConstraint.activate([
-                // Remote video (full screen)
-                remoteVideoContainer.topAnchor.constraint(equalTo: view.topAnchor),
-                remoteVideoContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                remoteVideoContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                remoteVideoContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-                
-                // Gradient overlays
-                gradientOverlayTop.topAnchor.constraint(equalTo: view.topAnchor),
-                gradientOverlayTop.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                gradientOverlayTop.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                gradientOverlayTop.heightAnchor.constraint(equalToConstant: 200),
-                
-                gradientOverlayBottom.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                gradientOverlayBottom.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                gradientOverlayBottom.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-                gradientOverlayBottom.heightAnchor.constraint(equalToConstant: 250),
-                
-                // Top bar
-                topBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-                topBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-                topBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-                
-                topBarStack.topAnchor.constraint(equalTo: topBar.topAnchor, constant: 16),
-                topBarStack.leadingAnchor.constraint(equalTo: topBar.leadingAnchor),
-                topBarStack.trailingAnchor.constraint(equalTo: topBar.trailingAnchor),
-                topBarStack.bottomAnchor.constraint(equalTo: topBar.bottomAnchor, constant: -16),
-                
-                // Local video sizes
-                localVideoContainer.widthAnchor.constraint(equalToConstant: 112),
-                localVideoContainer.heightAnchor.constraint(equalToConstant: 160),
-                
-                // Bottom controls container
-                bottomControlsContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-                bottomControlsContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-                bottomControlsContainer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
-                
-                // Glass panel
-                glassPanelView.topAnchor.constraint(equalTo: bottomControlsContainer.topAnchor),
-                glassPanelView.centerXAnchor.constraint(equalTo: bottomControlsContainer.centerXAnchor),
-                glassPanelView.bottomAnchor.constraint(equalTo: bottomControlsContainer.bottomAnchor),
-                glassPanelView.widthAnchor.constraint(equalTo: bottomControlsContainer.widthAnchor, multiplier: 0.95),
-                
-                // Primary controls stack
-                primaryControlsStack.topAnchor.constraint(equalTo: glassPanelView.topAnchor, constant: 32),
-                primaryControlsStack.centerXAnchor.constraint(equalTo: glassPanelView.centerXAnchor),
-                primaryControlsStack.bottomAnchor.constraint(equalTo: glassPanelView.bottomAnchor, constant: -32)
-            ])
+        NSLayoutConstraint.activate([
+            remoteVideoContainer.topAnchor.constraint(equalTo: view.topAnchor),
+            remoteVideoContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            remoteVideoContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            remoteVideoContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             
-            // Setup local video positioning constraints separately
-            localVideoTopConstraint = localVideoContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 16)
-            localVideoTrailingConstraint = localVideoContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16)
+            gradientOverlayTop.topAnchor.constraint(equalTo: view.topAnchor),
+            gradientOverlayTop.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            gradientOverlayTop.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            gradientOverlayTop.heightAnchor.constraint(equalToConstant: 200),
             
-            localVideoTopConstraint.isActive = true
-            localVideoTrailingConstraint?.isActive = true
-        }
+            gradientOverlayBottom.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            gradientOverlayBottom.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            gradientOverlayBottom.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            gradientOverlayBottom.heightAnchor.constraint(equalToConstant: 250),
+            
+            topBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            topBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            topBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            
+            topBarStack.topAnchor.constraint(equalTo: topBar.topAnchor, constant: 16),
+            topBarStack.leadingAnchor.constraint(equalTo: topBar.leadingAnchor),
+            topBarStack.trailingAnchor.constraint(equalTo: topBar.trailingAnchor),
+            topBarStack.bottomAnchor.constraint(equalTo: topBar.bottomAnchor, constant: -16),
+            
+            localVideoContainer.widthAnchor.constraint(equalToConstant: 112),
+            localVideoContainer.heightAnchor.constraint(equalToConstant: 160),
+            
+            bottomControlsContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            bottomControlsContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            bottomControlsContainer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
+            
+            glassPanelView.topAnchor.constraint(equalTo: bottomControlsContainer.topAnchor),
+            glassPanelView.centerXAnchor.constraint(equalTo: bottomControlsContainer.centerXAnchor),
+            glassPanelView.bottomAnchor.constraint(equalTo: bottomControlsContainer.bottomAnchor),
+            glassPanelView.widthAnchor.constraint(equalTo: bottomControlsContainer.widthAnchor, multiplier: 0.95),
+            
+            primaryControlsStack.topAnchor.constraint(equalTo: glassPanelView.topAnchor, constant: 32),
+            primaryControlsStack.centerXAnchor.constraint(equalTo: glassPanelView.centerXAnchor),
+            primaryControlsStack.bottomAnchor.constraint(equalTo: glassPanelView.bottomAnchor, constant: -32)
+        ])
+        
+        localVideoTopConstraint = localVideoContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 16)
+        localVideoTrailingConstraint = localVideoContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16)
+        
+        localVideoTopConstraint.isActive = true
+        localVideoTrailingConstraint?.isActive = true
+    }
     
     private func setupVideoViews() {
         guard let webRTCClient = webRTCClient else { return }
         
-        // Setup remote video
         let remoteVideoView = webRTCClient.remoteVideoView()
         webRTCClient.setupRemoteViewFrame(frame: view.bounds)
         remoteVideoView.translatesAutoresizingMaskIntoConstraints = false
@@ -725,7 +811,6 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
             remoteVideoView.bottomAnchor.constraint(equalTo: remoteVideoContainer.bottomAnchor)
         ])
         
-        // Setup local video
         let localVideoView = webRTCClient.localVideoView()
         webRTCClient.setupLocalViewFrame(frame: CGRect(x: 0, y: 0, width: 112, height: 160))
         localVideoView.translatesAutoresizingMaskIntoConstraints = false
@@ -752,7 +837,6 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
     // MARK: - Actions
     
     @objc private func flashButtonTapped() {
-        //Eğer aktif olan kamera arka kamera değilse işlem yapma
         guard isBackCameraActive else {
             showToast(message: "Flaş sadece arka kamerada kullanılabilir.", duration: 2.0)
             return
@@ -762,7 +846,6 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
     }
 
     private func setFlash(on: Bool) {
-
         guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back), device.hasTorch else {
             showToast(message: "Bu kamerada flaş desteklenmiyor.", duration: 2.0)
             return
@@ -780,7 +863,6 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
             device.unlockForConfiguration()
             isFlashOn = on
             
-            // UI Güncellemesi
             let iconName = isFlashOn ? "bolt.fill" : "bolt.slash.fill"
             let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .regular)
             flashButton.setImage(UIImage(systemName: iconName, withConfiguration: config), for: .normal)
@@ -794,10 +876,8 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
     @objc private func switchCameraTapped() {
         webRTCClient?.switchCamera()
         
-        // Kamera yönü durumunu tersine çevir
         isBackCameraActive.toggle()
         
-        // Eğer flaş açıksa ve kamera değiştiyse flaşı kapat
         if isFlashOn {
             if let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back), device.hasTorch {
                 try? device.lockForConfiguration()
@@ -812,6 +892,7 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
             flashButton.tintColor = .white
         }
     }
+    
     @objc private func muteButtonTapped() {
         webRTCClient?.toggleAudio(enable: !audioEnabled)
         audioEnabled.toggle()
@@ -892,51 +973,6 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
     }
     
     // MARK: - Helpers
-    private func sendSDP(sessionDescription: RTCSessionDescription) {
-        // 1. targetSocketId'nin dolu olduğunu kontrol et
-        guard let targetId = targetSocketId else {
-            print("Hata: targetSocketId nil, sinyal gönderilemedi!")
-            return
-        }
-        
-        var type = ""
-        if sessionDescription.type == .offer {
-            type = "offer"
-        } else if sessionDescription.type == .answer {
-            type = "answer"
-        }
-        
-        let sdpPayload: [String: Any] = [
-            "type": type,
-            "sdp": sessionDescription.sdp
-        ]
-        
-        //  targetId
-        let payload: [String: Any] = [
-            "to": targetId,
-            type: sdpPayload
-        ]
-        
-        print("Sinyal gönderiliyor: \(self.socket.sid ?? "unknown") -> \(targetId)")
-        socket.emit("webrtc-\(type)", payload)
-    }
-
-    private func sendCandidate(iceCandidate: RTCIceCandidate) {
-        guard let targetId = targetSocketId else { return }
-        
-        let candidate: [String: Any] = [
-            "candidate": iceCandidate.sdp,
-            "sdpMid": iceCandidate.sdpMid ?? "",
-            "sdpMLineIndex": iceCandidate.sdpMLineIndex
-        ]
-        
-        let payload: [String: Any] = [
-            "to": targetId, // Tırnak olmamalı
-            "candidate": candidate
-        ]
-        
-        socket.emit("webrtc-ice", payload)
-    }
     func showToast(message: String, duration: TimeInterval = 3.0) {
         let toastLabel = UILabel()
         toastLabel.text = message
@@ -974,7 +1010,7 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
 // MARK: - WebRTC Delegate
 extension CallViewController {
     func didGenerateCandidate(iceCandidate: RTCIceCandidate) {
-        sendCandidate(iceCandidate: iceCandidate)
+        // SFU modunda ICE candidate'ler sunucu transport'ları tarafından yönetilir
     }
     
     func didIceConnectionStateChanged(iceConnectionState: RTCIceConnectionState) {
@@ -1004,6 +1040,14 @@ extension CallViewController {
             self.statusLabel.text = "Disconnected"
             self.connectionDot.isHidden = true
             self.connectionDot.layer.removeAllAnimations()
+        }
+    }
+    
+    func didReceiveRemoteStream(stream: RTCMediaStream) {
+        DispatchQueue.main.async {
+            self.waitingOverlay.isHidden = true
+            self.statusLabel.text = "Connected"
+            self.connectionDot.isHidden = false
         }
     }
     
