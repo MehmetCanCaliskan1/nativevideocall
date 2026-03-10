@@ -15,6 +15,7 @@ class HomeActivity : AppCompatActivity() {
     
     companion object {
         const val EXTRA_MESSAGE = "com.example.webrtcdemoandroid.ROOM_ID"
+        const val EXTRA_USERNAME = "com.example.webrtcdemoandroid.USERNAME"
     }
     
     private var roomId: String = ""
@@ -36,13 +37,25 @@ class HomeActivity : AppCompatActivity() {
         val btnJoin = findViewById<Button>(R.id.btnJoin)
         val btnRandom = findViewById<Button>(R.id.btnRandom)
         val roomIDText = findViewById<EditText>(R.id.roomIDText)
+        val usernameText = findViewById<EditText>(R.id.usernameText)
 
         roomId = generateRandomString(100000, 999999)
         roomIDText.setText(roomId)
-
+        
         btnJoin.setOnClickListener {
+            val username = usernameText.text.toString()
+            if (roomId.isBlank()) {
+                roomIDText.error = "Room ID boş olamaz"
+                return@setOnClickListener
+            }
+            if (username.isBlank()) {
+                usernameText.error = "İsim boş olamaz"
+                return@setOnClickListener
+            }
+
             val intent = Intent(this, RoomActivity::class.java).apply {
                 putExtra(EXTRA_MESSAGE, roomId)
+                putExtra(EXTRA_USERNAME, username)
             }
             startActivity(intent)
         }
@@ -62,17 +75,6 @@ class HomeActivity : AppCompatActivity() {
             }
         })
 
-        btnJoin.setOnClickListener {4
-            if (roomId.isBlank()) {
-                roomIDText.error = "Room ID boş olamaz"
-                return@setOnClickListener
-            }
-
-            val intent = Intent(this, RoomActivity::class.java).apply {
-                putExtra(EXTRA_MESSAGE, roomId)
-            }
-            startActivity(intent)
-        }
 
     }
 

@@ -52,6 +52,7 @@ class RoomActivity : AppCompatActivity(), RtcListener {
     private lateinit var mSocketAddress: String
     private lateinit var roleBadge: TextView
     private lateinit var roomId: String
+    private lateinit var username: String
     private val permissionChecker = PermissionChecker()
     private var peerConnectionClient: PeerConnectionClient? = null
 
@@ -126,6 +127,7 @@ class RoomActivity : AppCompatActivity(), RtcListener {
         }
 
         roomId = intent.getStringExtra(HomeActivity.EXTRA_MESSAGE) ?: ""
+        username = intent.getStringExtra(HomeActivity.EXTRA_USERNAME) ?: "Android User"
 
         // Initialize TextViews
         val roomIdText = findViewById<TextView>(R.id.room_id)
@@ -157,7 +159,7 @@ class RoomActivity : AppCompatActivity(), RtcListener {
 
     private fun init() {
         peerConnectionClient = PeerConnectionClient(
-            this, roomId, this, mSocketAddress, eglBase,
+            this, roomId, username, this, mSocketAddress, eglBase,
         )
         peerConnectionClientRef = WeakReference(peerConnectionClient)
 

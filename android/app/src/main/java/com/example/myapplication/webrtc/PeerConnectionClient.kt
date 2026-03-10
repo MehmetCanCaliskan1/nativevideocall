@@ -17,6 +17,7 @@ import android.os.Build
 class PeerConnectionClient(
     private val context: Context,
     private val roomId: String,
+    private val username: String,
     private val rtcListener: RtcListener,
     host: String,
     private val rootEglBase: EglBase
@@ -180,7 +181,7 @@ class PeerConnectionClient(
 
     init {
         initWebRtc()
-        initSignaling(host)
+        initSignaling(host, username)
     }
 
     // initialize
@@ -205,7 +206,7 @@ class PeerConnectionClient(
 
     }
 
-    private fun initSignaling(host: String) {
+    private fun initSignaling(host: String, username: String) {
         try {
             socket = IO.socket(host)
         } catch (e: URISyntaxException) {
@@ -216,6 +217,7 @@ class PeerConnectionClient(
         signalingHandler = SignalingHandler(
             socket = socket,
             roomId = roomId,
+            username = username,
             onPeerCreated = { createPeer() },
             getPeer = { peer },
             listener = rtcListener

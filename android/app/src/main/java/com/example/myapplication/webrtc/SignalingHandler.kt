@@ -9,6 +9,7 @@ import org.webrtc.SessionDescription
 class SignalingHandler(
     private val socket: Socket,
     private val roomId: String,
+    private val username: String,
     private val onPeerCreated: () -> WebRtcPeer,
     private val getPeer: () -> WebRtcPeer?,
     private val listener: RtcListener
@@ -32,7 +33,7 @@ class SignalingHandler(
         Log.d(TAG, "Socket connected")
         val obj = JSONObject().apply {
             put("roomId", roomId)
-            put("username", "Android User")
+            put("username", username)
         }
         socket.emit("join-room", obj)
     }
