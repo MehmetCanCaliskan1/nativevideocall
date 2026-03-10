@@ -44,6 +44,7 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
 
     
     var roomId: String = ""
+    var username: String = ""
     let manager = SocketManager(socketURL: URL(string: SERVER_URL)!, config: [.log(true), .compress])
     var socket: SocketIOClient!
     var webRTCClient: WebRTCClient!
@@ -145,7 +146,7 @@ class CallViewController: UIViewController, WebRTCClientDelegate {
             
             let payload: [String: Any] = [
                 "roomId": self.roomId,
-                "username": "iOS User"
+                "username": self.username.isEmpty ? "iOS User" : self.username
             ]
             
             // Backend uyumlu 'join-room'

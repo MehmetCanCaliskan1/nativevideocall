@@ -8,6 +8,7 @@ class ViewController: UIViewController {
     
     private let glassPanelContainer = UIView()
     private let titleLabel = UILabel()
+    private let usernameTextField = UITextField()
     private let roomIdTextField = UITextField()
     private let joinButton = UIButton(type: .system)
     private let orDividerContainer = UIView()
@@ -62,6 +63,21 @@ class ViewController: UIViewController {
         titleLabel.textAlignment = .center
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         glassPanelContainer.addSubview(titleLabel)
+        
+        usernameTextField.backgroundColor = UIColor(red: 0.96, green: 0.96, blue: 0.98, alpha: 1.0)
+        usernameTextField.textColor = .black
+        usernameTextField.font = UIFont.systemFont(ofSize: 18, weight: .semibold)
+        usernameTextField.textAlignment = .center
+        usernameTextField.attributedPlaceholder = NSAttributedString(
+            string: "Adınız",
+            attributes: [NSAttributedString.Key.foregroundColor: UIColor.gray.withAlphaComponent(0.6)]
+        )
+        usernameTextField.layer.cornerRadius = 18
+        usernameTextField.layer.borderWidth = 1
+        usernameTextField.layer.borderColor = UIColor(white: 0.9, alpha: 1.0).cgColor
+        usernameTextField.delegate = self
+        usernameTextField.translatesAutoresizingMaskIntoConstraints = false
+        glassPanelContainer.addSubview(usernameTextField)
         
         roomIdTextField.backgroundColor = UIColor(red: 0.96, green: 0.96, blue: 0.98, alpha: 1.0)
         roomIdTextField.textColor = .black
@@ -149,10 +165,15 @@ class ViewController: UIViewController {
             titleLabel.leadingAnchor.constraint(equalTo: glassPanelContainer.leadingAnchor, constant: 24),
             titleLabel.trailingAnchor.constraint(equalTo: glassPanelContainer.trailingAnchor, constant: -24),
             
-            roomIdTextField.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 50),
+            roomIdTextField.topAnchor.constraint(equalTo: usernameTextField.bottomAnchor, constant: 16),
             roomIdTextField.leadingAnchor.constraint(equalTo: glassPanelContainer.leadingAnchor, constant: 32),
             roomIdTextField.trailingAnchor.constraint(equalTo: glassPanelContainer.trailingAnchor, constant: -32),
             roomIdTextField.heightAnchor.constraint(equalToConstant: 64),
+            
+            usernameTextField.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 40),
+            usernameTextField.leadingAnchor.constraint(equalTo: glassPanelContainer.leadingAnchor, constant: 32),
+            usernameTextField.trailingAnchor.constraint(equalTo: glassPanelContainer.trailingAnchor, constant: -32),
+            usernameTextField.heightAnchor.constraint(equalToConstant: 56),
             
             joinButton.topAnchor.constraint(equalTo: roomIdTextField.bottomAnchor, constant: 24),
             joinButton.leadingAnchor.constraint(equalTo: glassPanelContainer.leadingAnchor, constant: 32),
@@ -192,11 +213,14 @@ class ViewController: UIViewController {
     
     @objc private func joinButtonTapped() {
         guard let roomId = roomIdTextField.text, !roomId.isEmpty else { return }
+        let username = usernameTextField.text ?? "iOS User"
         
         roomIdTextField.resignFirstResponder()
+        usernameTextField.resignFirstResponder()
         
         let callVC = CallViewController()
         callVC.roomId = roomId
+        callVC.username = username
         navigationController?.pushViewController(callVC, animated: true)
     }
     
